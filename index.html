@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Area &amp; Room Browser</title>
+<!-- Web fonts load non-blocking: on a locked-down network they simply never apply and the system fallback stack is used, with no render delay. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
+<!-- three.js bundled locally (r128, MIT). No CDN dependency. -->
+<script src="three.min.js"></script>
+<style>
+  :root{
+    --bg:#E5E6E8;
+    --panel:#ffffff;
+    --panel-2:#f6f8fb;
+    --line:#e1e6ec;
+    --line-strong:#cdd5df;
+    --ink:#1b242f;
+    --ink-soft:#5b6675;
+    --ink-faint:#8a94a3;
+    --accent:#2f7fd1;
+    --accent-ink:#14385f;
+    --titlebar:#1c2530;
+    --titlebar-ink:#c8d2de;
+    --titlebar-faint:#74808f;
+    --office:#4C72B0;
+    --meeting:#55A868;
+    --circulation:#C9A33B;
+    --core:#8A8F98;
+    --amenity:#8E6FB0;
+    --font-ui:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --rail-l:268px;
+    --rail-r:296px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+
+  /* loading screen ---------------------------------------------------- */
+  #loading-screen{
+    position:fixed; inset:0;
+    background:#E5E6E8;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; z-index:99999;
+    transition: opacity .6s ease-out;
+  }
+  #loading-screen.ls-fade-out{ opacity:0; pointer-events:none; }
+  .ls-logo{
+    width:240px; max-width:60vw; height:auto; display:block;
+    animation: ls-rise .85s cubic-bezier(.22,.61,.36,1) both,
+               ls-breathe 2.6s ease-in-out .85s infinite;
+  }
+  .ls-subtitle{
+    font-family: Inter, -apple-system, system-ui, sans-serif;
+    font-size: 11px; color: #94989e;
+    letter-spacing: .14em; text-transform: uppercase; font-weight: 500;
+    animation: ls-rise .85s cubic-bezier(.22,.61,.36,1) .15s both;
+  }
+  @keyframes ls-rise{
+    from { opacity:0; transform:translateY(8px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes ls-breathe{
+    0%,100% { opacity: 1; }
+    50%     { opacity: 0.78; }
+  }
+  body{
+    font-family:var(--font-ui);
+    color:var(--ink);
+    background:var(--bg);
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  button{font-family:inherit;cursor:pointer;}
+
+  #app{
+    height:100vh;
+    display:grid;
+    grid-template-rows:auto 1fr auto;
+    background:var(--bg);
+  }
+
+  /* ---- title bar ---- */
+  #titlebar{
+    height:38px;
+    background:var(--titlebar);
+    color:var(--titlebar-ink);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 12px;
+    user-select:none;
+    border-bottom:1px solid #11181f;
+  }
+  .tb-left{display:flex;align-items:center;gap:10px;font-size:12.5px;letter-spacing:.02em;font-weight:600;}
+  .tb-dot{width:9px;height:9px;border-radius:2px;background:var(--accent);box-shadow:0 0 0 3px rgba(47,127,209,.18);}
+  .tb-sub{color:var(--titlebar-faint);font-weight:400;letter-spacing:.04em;text-transform:uppercase;font-size:10px;}
+  .tb-right{display:flex;gap:6px;}
+  .win{
+    width:26px;height:22px;border:none;border-radius:4px;background:transparent;
+    color:var(--titlebar-faint);font-size:13px;line-height:1;
+  }
+  .win:hover{background:rgba(255,255,255,.08);color:var(--titlebar-ink);}
+  .win.close:hover{background:#c0392b;color:#fff;}
+
+  /* ---- main 3 columns ---- */
+  #main{
+    display:grid;
+    grid-template-columns:var(--rail-l) 1fr var(--rail-r);
+    min-height:0;
+  }
+  aside{
+    background:var(--panel);
+    overflow-y:auto;
+    min-height:0;
+  }
+  #left{border-right:1px solid var(--line);}
+  #right{border-left:1px solid var(--line);}
+
+  .sec{padding:16px 16px 18px;border-bottom:1px solid var(--line);}
+  .sec:last-child{border-bottom:none;}
+  .sec-head{
+    display:flex;align-items:baseline;justify-content:space-between;
+    margin-bottom:11px;
+  }
+  .sec-title{
+    font-size:10.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  .sec-tools{display:flex;gap:9px;}
+  .tlink{
+    background:none;border:none;padding:0;font-size:10.5px;letter-spacing:.04em;
+    color:var(--accent);text-transform:uppercase;font-weight:600;
+  }
+  .tlink:hover{text-decoration:underline;}
+
+  /* check rows */
+  .crow{
+    display:flex;align-items:center;gap:9px;
+    padding:6px 6px;border-radius:6px;cursor:pointer;
+  }
+  .crow:hover{background:var(--panel-2);}
+  .crow input{
+    appearance:none;-webkit-appearance:none;
+    width:15px;height:15px;border:1.5px solid var(--line-strong);border-radius:4px;
+    background:#fff;display:grid;place-content:center;flex:0 0 auto;cursor:pointer;
+    transition:background .12s,border-color .12s;
+  }
+  .crow input:checked{background:var(--accent);border-color:var(--accent);}
+  .crow input:checked::after{content:"";width:8px;height:8px;border-radius:1px;background:#fff;clip-path:polygon(14% 47%,0 60%,40% 100%,100% 22%,86% 9%,38% 73%);}
+  .swatch{width:11px;height:11px;border-radius:3px;flex:0 0 auto;}
+  .crow .cname{font-size:13px;color:var(--ink);flex:1;}
+  .crow .ccount{font-size:11px;color:var(--ink-faint);font-family:var(--font-mono);}
+
+  /* switch */
+  .switch{display:flex;align-items:center;justify-content:space-between;padding:4px 6px;}
+  .switch .slabel{font-size:13px;}
+  .toggle{position:relative;width:38px;height:21px;flex:0 0 auto;}
+  .toggle input{opacity:0;width:0;height:0;position:absolute;}
+  .track{position:absolute;inset:0;background:var(--line-strong);border-radius:11px;transition:background .15s;}
+  .thumb{position:absolute;top:2px;left:2px;width:17px;height:17px;background:#fff;border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s;}
+  .toggle input:checked + .track{background:var(--accent);}
+  .toggle input:checked + .track .thumb{transform:translateX(17px);}
+  .lblsel-row{display:flex;align-items:center;justify-content:space-between;padding:10px 6px 2px;gap:10px;}
+  .lblsel{flex:1;max-width:152px;font-family:var(--font-ui);font-size:12.5px;color:var(--ink);
+    background:#fff;border:1px solid var(--line-strong);border-radius:6px;padding:5px 7px;}
+  .lblsel:focus{outline:none;border-color:var(--accent);}
+
+  /* ---- viewport ---- */
+  #viewport{position:relative;min-width:0;min-height:0;overflow:hidden;background:#dfe5ec;flex:1 1 0;}
+  #canvas-wrap{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(120% 90% at 30% 0%, #fbfcfe 0%, rgba(251,252,254,0) 55%),
+      linear-gradient(180deg,#f3f6fa 0%,#dfe5ec 100%);
+  }
+  #c{position:absolute;inset:0;width:100%;height:100%;display:block;}
+  #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
+  .lbl{
+    position:absolute;transform:translate(-50%,-130%);
+    font-size:10.5px;font-weight:600;letter-spacing:.01em;color:#26313d;
+    background:rgba(255,255,255,.82);border:1px solid var(--line);
+    padding:1px 6px;border-radius:5px;white-space:nowrap;
+    box-shadow:0 1px 3px rgba(20,30,45,.12);
+  }
+
+  #vp-tools{
+    position:absolute;top:12px;right:12px;display:flex;gap:8px;align-items:center;
+  }
+  .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(20,30,45,.10);}
+  .seg button{
+    border:none;background:transparent;color:var(--ink-soft);
+    font-size:12px;font-weight:600;letter-spacing:.03em;padding:7px 13px;
+  }
+  .seg button + button{border-left:1px solid var(--line);}
+  .seg button.on{background:var(--titlebar);color:#fff;}
+  .vbtn{
+    border:1px solid var(--line-strong);background:var(--panel);color:var(--ink-soft);
+    font-size:12px;font-weight:600;letter-spacing:.03em;padding:7px 12px;border-radius:8px;
+    box-shadow:0 1px 3px rgba(20,30,45,.10);
+  }
+  .vbtn:hover{color:var(--ink);border-color:var(--ink-faint);}
+
+  #compass{
+    position:absolute;left:14px;top:14px;width:34px;height:34px;border-radius:50%;
+    border:1px solid var(--line-strong);background:rgba(255,255,255,.85);
+    display:none;align-items:center;justify-content:center;
+    font-size:11px;font-weight:700;color:var(--ink-soft);letter-spacing:.04em;
+    box-shadow:0 1px 3px rgba(20,30,45,.12);
+  }
+  #compass b{color:var(--accent);}
+
+  #tooltip{
+    position:absolute;pointer-events:none;display:none;z-index:5;
+    background:var(--titlebar);color:#eef2f7;border-radius:7px;
+    padding:7px 10px;font-size:11.5px;line-height:1.45;max-width:220px;
+    box-shadow:0 6px 18px rgba(12,18,28,.28);
+  }
+  #tooltip .tt-name{font-weight:600;}
+  #tooltip .tt-meta{color:#9fb0c2;font-family:var(--font-mono);font-size:10.5px;margin-top:1px;}
+
+  /* ---- right: summary + selection ---- */
+  .metric-row{display:flex;gap:14px;margin-bottom:14px;}
+  .metric{flex:1;}
+  .metric .mv{font-family:var(--font-mono);font-size:25px;font-weight:600;color:var(--ink);line-height:1;letter-spacing:-.01em;}
+  .metric .mv small{font-size:12px;color:var(--ink-faint);font-weight:500;margin-left:3px;}
+  .metric .mk{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px;}
+
+  .bars{display:flex;flex-direction:column;gap:9px;}
+  .bar{display:grid;grid-template-columns:11px 1fr auto;gap:8px;align-items:center;}
+  .bar .bsw{width:11px;height:11px;border-radius:3px;}
+  .bar .bbody{position:relative;}
+  .bar .btrack{height:7px;background:var(--panel-2);border-radius:4px;overflow:hidden;border:1px solid var(--line);}
+  .bar .bfill{height:100%;border-radius:3px;transition:width .35s cubic-bezier(.2,.7,.2,1);}
+  .bar .bname{font-size:11px;color:var(--ink-soft);margin-bottom:3px;display:flex;justify-content:space-between;}
+  .bar .bval{font-family:var(--font-mono);font-size:11px;color:var(--ink);}
+  .bar .bpct{font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);min-width:34px;text-align:right;}
+
+  #sel-empty{font-size:12.5px;color:var(--ink-faint);line-height:1.5;padding:2px 0;}
+  #sel-card{display:none;}
+  .sel-name{font-size:16px;font-weight:600;color:var(--ink);margin-bottom:2px;}
+  .sel-dept{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:14px;}
+  .sel-dept .swatch{width:10px;height:10px;border-radius:3px;}
+  .kv{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line);font-size:12.5px;}
+  .kv .k{color:var(--ink-soft);}
+  .kv .v{font-family:var(--font-mono);color:var(--ink);}
+
+  /* ---- status bar ---- */
+  #statusbar{
+    height:28px;background:var(--panel);border-top:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 14px;font-size:11px;color:var(--ink-faint);
+  }
+  #statusbar .live{display:inline-flex;align-items:center;gap:7px;}
+  #statusbar .pip{width:7px;height:7px;border-radius:50%;background:var(--circulation);box-shadow:0 0 0 3px rgba(201,163,59,.18);}
+  #statusbar .right{font-family:var(--font-mono);font-size:10.5px;}
+
+  /* entrance */
+  @keyframes rise{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+  #left,#right,#viewport{animation:rise .42s ease both;}
+  #viewport{animation-delay:.04s;}
+  #right{animation-delay:.1s;}
+
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#d3dae3;border-radius:6px;border:2px solid var(--panel);}
+  ::-webkit-scrollbar-thumb:hover{background:#bcc6d2;}
+
+  /* ---- label checklist (multi-select Label shows) ---- */
+  .lblist{margin-top:6px;display:flex;flex-direction:column;gap:1px;}
+  .lblist .crow{padding:5px 6px;}
+  .lblist .cname{font-size:12.5px;}
+  .lblsel-head{font-size:12px;color:var(--ink-soft);padding:8px 6px 2px;}
+
+  /* ---- recolorise toggle row ---- */
+  #recol-row{display:flex;align-items:center;justify-content:space-between;
+    padding:6px 6px 10px;margin-bottom:10px;border-bottom:1px solid var(--line);}
+  #recol-row .slabel{font-size:12px;color:var(--ink-soft);}
+
+  /* ---- bottom table panel ---- */
+  #tablepanel{background:var(--panel);border-top:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:0;flex:0 0 240px;}
+  #tablepanel.collapsed{flex:0 0 auto;}
+  #table-bar{height:34px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;
+    background:var(--panel-2);border-bottom:1px solid var(--line);
+    font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);font-weight:600;
+    flex:0 0 auto;}
+  #table-bar .tb-title{display:flex;gap:10px;align-items:baseline;}
+  #table-bar .tb-count{color:var(--ink-soft);font-family:var(--font-mono);
+    font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:500;}
+  #table-collapse{background:var(--panel);border:1px solid var(--line-strong);color:var(--ink-soft);
+    font-size:10.5px;padding:4px 11px;border-radius:5px;letter-spacing:.06em;
+    text-transform:uppercase;font-weight:600;font-family:var(--font-ui);cursor:pointer;}
+  #table-collapse:hover{color:var(--ink);border-color:var(--ink-faint);}
+  #table-wrap{flex:1 1 0;overflow:auto;}
+  #tablepanel.collapsed #table-wrap{display:none;}
+  table.atable{border-collapse:collapse;width:auto;font-size:12px;}
+  .atable th,.atable td{padding:6px 12px;border-bottom:1px solid var(--line);
+    text-align:left;white-space:nowrap;}
+  .atable thead th{position:sticky;top:0;background:var(--panel);color:var(--ink-faint);
+    font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:10.5px;
+    border-bottom:1px solid var(--line-strong);z-index:1;}
+  .atable tbody tr{cursor:pointer;}
+  .atable tbody tr:hover{background:var(--panel-2);}
+  .atable tbody tr.sel{background:rgba(47,127,209,.12);}
+  .atable td.num{font-family:var(--font-mono);text-align:right;}
+  .atable td.nm{font-weight:500;}
+
+  /* ---- centre column (viewport + bottom table panel) ---- */
+  #centre{display:flex;flex-direction:column;min-width:0;min-height:0;}
+
+  /* ---- hidden-columns chip strip in the table bar ---- */
+  #table-bar .tb-actions{display:flex;gap:8px;align-items:center;flex:0 0 auto;}
+  #table-bar .tb-hidden{display:flex;gap:6px;flex:1;justify-content:flex-start;
+    padding:0 16px;overflow-x:auto;overflow-y:hidden;align-items:center;}
+  .hide-chip{background:var(--panel);border:1px solid var(--line-strong);color:var(--ink-soft);
+    font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
+    padding:3px 9px;border-radius:11px;cursor:pointer;display:inline-flex;align-items:center;
+    gap:6px;font-family:var(--font-ui);white-space:nowrap;}
+  .hide-chip:hover{color:var(--ink);border-color:var(--ink-faint);}
+  .hide-chip .chip-plus{font-size:13px;color:var(--accent);font-weight:700;line-height:1;}
+
+  /* ---- splitter handle between viewport and table ---- */
+  #splitter{flex:0 0 8px;position:relative;cursor:row-resize;
+    background:var(--panel-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  #splitter::before{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:7px;height:7px;background:var(--ink-faint);border-radius:50%;transition:background .15s;}
+  #splitter:hover::before{background:var(--accent);}
+  #splitter.hidden{display:none;}
+
+  /* ---- richer table header: label row + filter row, sort, drag/drop hints ---- */
+  .atable th{padding:6px 12px 8px;vertical-align:top;position:relative;}
+  .atable .th-row1{display:flex;align-items:center;gap:6px;}
+  .atable .th-label{flex:1;cursor:pointer;user-select:none;color:var(--ink-faint);}
+  .atable .th-label:hover{color:var(--ink);}
+  .atable .th-arrow{margin-left:4px;color:var(--accent);font-size:10px;font-weight:700;}
+
+  /* collapsible side-panel sections */
+  .sec-head-end{display:flex;align-items:center;gap:8px;}
+  .sec-collapse{background:var(--panel);border:1px solid var(--line-strong);color:var(--ink-soft);
+    font-size:9.5px;padding:2px 7px;border-radius:4px;letter-spacing:.06em;
+    text-transform:uppercase;font-weight:600;font-family:var(--font-ui);cursor:pointer;}
+  .sec-collapse:hover{color:var(--ink);border-color:var(--ink-faint);}
+  .sec.collapsed > *:not(.sec-head){display:none;}
+  .sec.collapsed .sec-head{margin-bottom:0;padding-bottom:4px;}
+
+  /* greyed-out checklist row: used in Display > Label shows for params
+     that have no usable data across any space */
+  .crow.crow-empty{opacity:.45;cursor:default;}
+  .crow.crow-empty input{pointer-events:none;}
+  .crow.crow-empty:hover{background:transparent;}
+
+  /* navigation help popover (3D / Plan toolbar) */
+  #nav-help-wrap{position:relative;display:inline-block;}
+  .vbtn-help{width:30px;text-align:center;font-weight:600;}
+  #nav-help-pop{
+    position:absolute;top:calc(100% + 6px);right:0;z-index:50;
+    background:#fff;border:1px solid var(--line-strong);border-radius:6px;
+    box-shadow:0 6px 22px rgba(15,23,42,.18);
+    padding:10px 12px;min-width:260px;display:none;
+    font-family:var(--font-ui);
+  }
+  #nav-help-pop.open{display:block;}
+  #nav-help-pop .nh-title{font-size:10.5px;color:var(--ink-faint);
+    text-transform:uppercase;letter-spacing:.06em;font-weight:600;
+    padding-bottom:6px;border-bottom:1px solid var(--line);margin-bottom:6px;}
+  #nav-help-pop .nh-row{display:flex;justify-content:space-between;gap:14px;
+    font-size:11.5px;padding:3px 0;}
+  #nav-help-pop .nh-key{color:var(--ink);font-weight:600;font-family:var(--font-mono);
+    font-size:10.5px;white-space:nowrap;}
+  #nav-help-pop .nh-act{color:var(--ink-soft);text-align:right;}
+
+  /* selection-only button in the schedule bar */
+  #sel-only-toggle{background:transparent;border:1px solid var(--line-strong);color:var(--ink-soft);
+    font-size:10.5px;padding:4px 11px;border-radius:5px;letter-spacing:.06em;
+    text-transform:uppercase;font-weight:600;font-family:var(--font-ui);cursor:pointer;}
+  #sel-only-toggle:hover{color:var(--ink);border-color:var(--ink-faint);}
+  #sel-only-toggle.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+  /* bar / pie mode switch in the Breakdown section */
+  .bd-mode{display:inline-flex;border:1px solid var(--line-strong);border-radius:4px;overflow:hidden;}
+  .bd-mode-btn{background:transparent;border:0;color:var(--ink-soft);font-size:9.5px;
+    padding:3px 9px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;
+    font-family:var(--font-ui);cursor:pointer;}
+  .bd-mode-btn.on{background:var(--accent);color:#fff;}
+  .bd-mode-btn:not(.on):hover{background:rgba(0,0,0,.04);color:var(--ink);}
+
+  /* pie chart */
+  .pie{padding:4px;}
+  .pie-svg{display:block;margin:6px auto 10px;max-width:170px;}
+  .pie-legend{padding:2px 4px;}
+  .pie-row{display:grid;grid-template-columns:14px 1fr auto auto;gap:8px;align-items:center;
+    padding:4px 0;font-size:11.5px;border-bottom:1px solid var(--line);}
+  .pie-row:last-child{border-bottom:0;}
+  .psw{width:10px;height:10px;border-radius:2px;}
+  .pn{color:var(--ink);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pv{color:var(--ink-faint);font-family:var(--font-mono);font-size:10px;}
+  .pp{color:var(--ink);font-weight:700;font-family:var(--font-mono);font-size:10.5px;
+    min-width:30px;text-align:right;}
+
+  /* slider + colour pickers in the Display section */
+  .display-sub{font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;
+    letter-spacing:.06em;font-weight:600;padding:10px 6px 4px;}
+  .ctrl-row{display:flex;align-items:center;gap:8px;padding:5px 6px;}
+  .ctrl-row .slabel{flex:1;font-size:12px;color:var(--ink-soft);}
+  .ctrl-row input[type=range]{flex:0 0 88px;}
+  .ctrl-row .val{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint);
+    min-width:30px;text-align:right;}
+  .ctrl-row input[type=color]{width:34px;height:22px;border:1px solid var(--line-strong);
+    border-radius:4px;cursor:pointer;background:transparent;padding:0;}
+  .atable tbody tr{user-select:none;}
+
+  /* per-column filter button (Excel-style dropdown trigger) */
+  .atable .th-filter-btn{border:none;background:transparent;color:var(--ink-faint);
+    font-size:11px;line-height:1;width:18px;height:18px;border-radius:3px;
+    cursor:pointer;transition:background .15s,color .15s;
+    font-family:var(--font-ui);padding:0;flex:0 0 auto;}
+  .atable .th-filter-btn:hover{background:rgba(0,0,0,.06);color:var(--ink);}
+  .atable .th-filter-btn.active{color:var(--accent);}
+
+  /* filter popover */
+  #filter-popover{position:fixed;background:var(--panel);
+    border:1px solid var(--line-strong);border-radius:6px;width:240px;
+    display:none;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.18);
+    z-index:100;font-family:var(--font-ui);font-size:12px;}
+  #filter-popover.open{display:flex;}
+  .fp-head{padding:8px 8px 6px;border-bottom:1px solid var(--line);}
+  #fp-search{width:100%;font-size:11.5px;padding:5px 8px;
+    border:1px solid var(--line);border-radius:4px;
+    font-family:var(--font-ui);box-sizing:border-box;background:#fff;color:var(--ink);}
+  #fp-search:focus{outline:none;border-color:var(--accent);}
+  #fp-search::placeholder{color:var(--ink-faint);}
+  .fp-master{padding:5px 12px;border-bottom:1px solid var(--line);}
+  .fp-master label{display:flex;align-items:center;gap:8px;cursor:pointer;
+    font-weight:500;color:var(--ink);}
+  .fp-list{flex:1 1 auto;overflow:auto;max-height:240px;
+    display:flex;flex-direction:column;gap:1px;padding:4px 0;}
+  .fp-list label{display:flex;align-items:center;gap:8px;padding:3px 12px;
+    cursor:pointer;color:var(--ink-soft);}
+  .fp-list label:hover{background:var(--panel-2);}
+  .fp-list .vname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fp-list .vcount{margin-left:auto;color:var(--ink-faint);
+    font-family:var(--font-mono);font-size:10.5px;}
+  .fp-empty{padding:14px 12px;color:var(--ink-faint);text-align:center;font-size:11.5px;}
+  .fp-actions{display:flex;justify-content:flex-end;border-top:1px solid var(--line);padding:6px 8px;}
+  .fp-actions button{background:var(--panel);border:1px solid var(--line-strong);color:var(--ink-soft);
+    font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;
+    padding:3px 9px;border-radius:5px;cursor:pointer;font-family:var(--font-ui);}
+  .fp-actions button:hover{color:var(--ink);border-color:var(--ink-faint);}
+
+  /* reset-filters button in the table bar */
+  #table-reset{background:var(--panel);border:1px solid var(--line-strong);color:var(--ink-soft);
+    font-size:10.5px;padding:4px 11px;border-radius:5px;letter-spacing:.06em;
+    text-transform:uppercase;font-weight:600;font-family:var(--font-ui);cursor:pointer;
+    margin-right:6px;}
+  #table-reset:hover:not(:disabled){color:var(--ink);border-color:var(--ink-faint);}
+  #table-reset:disabled{opacity:.35;cursor:default;}
+  .atable .th-hide{border:none;background:transparent;color:var(--ink-faint);
+    font-size:14px;line-height:1;width:16px;height:16px;border-radius:3px;cursor:pointer;
+    opacity:0;transition:opacity .15s,background .15s,color .15s;
+    font-family:var(--font-ui);padding:0;flex:0 0 auto;}
+  .atable th:hover .th-hide{opacity:1;}
+  .atable .th-hide:hover{background:rgba(0,0,0,.06);color:var(--ink);}
+  .atable .th-filter{width:100%;margin-top:5px;font-size:11px;border:1px solid var(--line);
+    border-radius:3px;padding:2px 6px;font-family:var(--font-ui);background:#fff;
+    color:var(--ink);box-sizing:border-box;text-transform:none;letter-spacing:0;font-weight:400;}
+  .atable .th-filter:focus{outline:none;border-color:var(--accent);}
+  .atable .th-filter::placeholder{color:var(--ink-faint);}
+  .atable th.dragging{opacity:.45;}
+  .atable th.drop-l{box-shadow:inset 3px 0 0 0 var(--accent);}
+  .atable th.drop-r{box-shadow:inset -3px 0 0 0 var(--accent);}
+</style>
+</head>
+<body>
+<div id="loading-screen" aria-hidden="true">
+  <img class="ls-logo" alt="Assael" src="data:image/jpeg;base64,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">
+  <div class="ls-subtitle">Area &amp; Room Browser</div>
+</div>
+<div id="app">
+  <header id="titlebar">
+    <div class="tb-left"><span class="tb-dot"></span>Area &amp; Room Browser</div>
+  </header>
+
+  <div id="main">
+    <!-- left rail: filters + display -->
+    <aside id="left">
+      <div class="sec">
+        <div class="sec-head">
+          <span class="sec-title">Levels</span>
+          <span class="sec-head-end">
+            <div class="sec-tools">
+              <button class="tlink" data-all="level">All</button>
+              <button class="tlink" data-clear="level">Clear</button>
+            </div>
+            <button class="sec-collapse" type="button">Collapse</button>
+          </span>
+        </div>
+        <div id="level-list"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-head">
+          <span class="sec-title" id="cat-title">Departments</span>
+          <span class="sec-head-end">
+            <div class="sec-tools">
+              <button class="tlink" data-all="dept">All</button>
+              <button class="tlink" data-clear="dept">Clear</button>
+            </div>
+            <button class="sec-collapse" type="button">Collapse</button>
+          </span>
+        </div>
+        <div id="dept-list"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-head"><span class="sec-title">Display</span><button class="sec-collapse" type="button">Collapse</button></div>
+        <label class="switch">
+          <span class="slabel" id="lbl-toggle-label">Space labels</span>
+          <span class="toggle">
+            <input type="checkbox" id="lbl-toggle" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
+        <div class="lblsel-head">Label shows</div>
+        <div class="lblist" id="lbl-list"></div>
+
+        <div class="display-sub">Selection</div>
+        <div class="ctrl-row">
+          <span class="slabel">Fade unselected</span>
+          <input type="range" id="fade-slider" min="0.05" max="0.5" step="0.01" value="0.22">
+          <span class="val" id="fade-val">0.22</span>
+        </div>
+        <div class="ctrl-row">
+          <span class="slabel">Highlight glow</span>
+          <input type="range" id="glow-slider" min="0" max="1" step="0.05" value="0.55">
+          <span class="val" id="glow-val">0.55</span>
+        </div>
+        <div class="ctrl-row">
+          <span class="slabel">Highlight colour</span>
+          <input type="color" id="hl-color" value="#2f88e6">
+        </div>
+      </div>
+    </aside>
+
+    <!-- centre column: viewport + table panel -->
+    <div id="centre">
+    <section id="viewport">
+      <div id="canvas-wrap">
+        <canvas id="c"></canvas>
+        <div id="labels"></div>
+      </div>
+      <div id="compass"><b>N</b></div>
+      <div id="vp-tools">
+        <div class="seg">
+          <button id="m3d" class="on" data-mode="3D">3D</button>
+          <button id="mplan" data-mode="PLAN">Plan</button>
+        </div>
+        <button class="vbtn" id="refresh">Refresh</button>
+        <button class="vbtn" id="reset">Reset view</button>
+        <div id="nav-help-wrap">
+          <button class="vbtn vbtn-help" id="nav-help" title="Mouse controls" type="button">?</button>
+          <div id="nav-help-pop" role="dialog" aria-label="Mouse controls">
+            <div class="nh-title">Mouse controls</div>
+            <div class="nh-row"><span class="nh-key">Left drag</span><span class="nh-act">Rotate (3D) &middot; Pan (Plan)</span></div>
+            <div class="nh-row"><span class="nh-key">Right drag</span><span class="nh-act">Pan</span></div>
+            <div class="nh-row"><span class="nh-key">Shift + Left drag</span><span class="nh-act">Pan</span></div>
+            <div class="nh-row"><span class="nh-key">Scroll</span><span class="nh-act">Zoom to cursor</span></div>
+            <div class="nh-row"><span class="nh-key">Click</span><span class="nh-act">Select space</span></div>
+            <div class="nh-row"><span class="nh-key">Ctrl + Click</span><span class="nh-act">Toggle in selection</span></div>
+            <div class="nh-row"><span class="nh-key">Shift + Click</span><span class="nh-act">Range select (in table order)</span></div>
+            <div class="nh-row"><span class="nh-key">Click empty space</span><span class="nh-act">Clear selection</span></div>
+          </div>
+        </div>
+      </div>
+      <div id="tooltip"></div>
+    </section>
+    <div id="splitter" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
+    <section id="tablepanel">
+      <div id="table-bar">
+        <div class="tb-title"><span>Schedule</span><span class="tb-count" id="table-count">0 visible</span></div>
+        <div id="table-hidden" class="tb-hidden"></div>
+        <div class="tb-actions">
+          <button id="table-reset" type="button" disabled>Reset filters</button>
+          <button id="sel-only-toggle" type="button" title="Show only selected spaces">Selection only</button>
+          <button id="table-collapse" type="button">Collapse</button>
+        </div>
+      </div>
+      <div id="table-wrap">
+        <table class="atable">
+          <thead><tr id="table-head"></tr></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+    </section>
+    </div>
+
+    <!-- right rail: summary + selection -->
+    <aside id="right">
+      <div class="sec" id="sec-summary">
+        <div class="sec-head"><span class="sec-title">Summary</span></div>
+        <div class="metric-row">
+          <div class="metric"><div class="mv" id="m-area">0<small>m&sup2;</small></div><div class="mk">Filtered area</div></div>
+          <div class="metric"><div class="mv" id="m-count">0</div><div class="mk" id="m-count-label">Spaces</div></div>
+        </div>
+      </div>
+
+      <div class="sec" id="sec-breakdown">
+        <div class="sec-head">
+          <span class="sec-title">Breakdown</span>
+          <span class="sec-head-end">
+            <div class="bd-mode">
+              <button class="bd-mode-btn on" data-bdmode="bars" type="button">Bars</button>
+              <button class="bd-mode-btn"    data-bdmode="pie"  type="button">Pie</button>
+            </div>
+            <button class="sec-collapse" type="button">Collapse</button>
+          </span>
+        </div>
+        <label class="switch" id="recol-row">
+          <span class="slabel">Recolorise by label</span>
+          <span class="toggle">
+            <input type="checkbox" id="recol-toggle" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
+        <div class="bars" id="bars"></div>
+        <div class="pie"  id="pie" style="display:none;"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-head"><span class="sec-title">Selection</span><button class="sec-collapse" type="button">Collapse</button></div>
+        <div class="sec-body">
+          <div id="sel-empty">Click a space in the viewer to inspect its parameters.</div>
+          <div id="sel-card">
+            <div class="sel-name" id="sel-name"></div>
+            <div class="sel-dept"><span class="swatch" id="sel-sw"></span><span id="sel-deptname"></span></div>
+            <div class="kv"><span class="k">Level</span><span class="v" id="sel-level"></span></div>
+            <div class="kv"><span class="k">Area</span><span class="v" id="sel-area"></span></div>
+            <div class="kv" id="sel-h-row"><span class="k">Ceiling height</span><span class="v" id="sel-h"></span></div>
+            <div id="sel-params"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <footer id="statusbar">
+    <span class="live"><span class="pip"></span><span id="status-left">Reading model...</span></span>
+    <span class="right" id="status-right"></span>
+  </footer>
+</div>
+
+  <!-- per-column filter popover (one element, repositioned per click) -->
+  <div id="filter-popover" role="dialog" aria-label="Column filter">
+    <div class="fp-head"><input type="text" id="fp-search" placeholder="Search"></div>
+    <div class="fp-master">
+      <label><input type="checkbox" id="fp-master-cb" checked><span>(Select all)</span></label>
+    </div>
+    <div class="fp-list" id="fp-list"></div>
+    <div class="fp-actions"><button type="button" id="fp-close">Close</button></div>
+  </div>
+
+<script src="model-data.js"></script>
+<script>
+// loading screen: fixed 3-second display, then fade out and remove.
+(function(){
+  setTimeout(function(){
+    const ls = document.getElementById('loading-screen');
+    if(!ls) return;
+    ls.classList.add('ls-fade-out');
+    setTimeout(function(){
+      if(ls && ls.parentNode) ls.parentNode.removeChild(ls);
+    }, 700);
+  }, 3000);
+})();
+
+/* ============================================================
+   MODEL DATA  (written by the Revit tool into model-data.js)
+   All lengths in metres, pre-centred on the model bounds.
+   ============================================================ */
+const DATA = window.__MODEL_DATA__;
+if(!DATA || !DATA.spaces || !DATA.spaces.length){
+  document.body.innerHTML =
+    '<div style="font-family:sans-serif;padding:48px;color:#5b6675;max-width:560px">'+
+    '<h2 style="color:#1b242f;font-weight:600">No model data</h2>'+
+    '<p>Run the <b>Area &amp; Room Browser</b> button in Revit to read the open '+
+    'model. If you opened this file directly, generate <code>model-data.js</code> '+
+    'first.</p></div>';
+  throw new Error('Area & Room Browser: no model data found.');
+}
+
+const MODE = DATA.meta.mode;                       // 'rooms' | 'areas'
+const CAT_LABEL = (MODE === 'areas') ? 'Area schemes' : 'Departments';
+
+const DEPARTMENTS = {};
+DATA.categories.forEach(function(cdef){ DEPARTMENTS[cdef.key] = { color:cdef.color }; });
+const DEPT_ORDER = DATA.categories.map(function(cdef){ return cdef.key; });
+
+const LEVELS = DATA.levels.map(function(l){ return { id:l.id, name:l.name, z:l.z }; });
+
+// Data is pre-centred, so the viewer's centring offset is zero.
+const OX = 0, OY = 0;
+
+const SPACES = DATA.spaces.map(function(s){
+  return {
+    id:s.id, name:s.name, number:s.number,
+    levelId:s.levelId, levelName:s.levelName, baseZ:s.baseZ,
+    dept:s.category, color:s.color,
+    loop:s.loop, holes:s.holes,
+    cx:s.cx, cy:s.cy,
+    w:s.w, d:s.d,
+    area:s.area, height:s.height, params:s.params
+  };
+});
+
+// Framing derived from model size so any model fills the view.
+const SPAN  = Math.max(DATA.meta.span || 40, 8);
+const STACK = DATA.meta.stack || 0;
+
+// Per-mode chrome.
+(function(){
+  const t = document.getElementById('cat-title'); if(t){ t.textContent = CAT_LABEL; }
+  const sub = document.getElementById('tb-sub');
+  if(sub){ sub.textContent = (MODE === 'areas' ? 'Areas' : 'Rooms') + ' \u00B7 ' + DATA.meta.model; }
+  if(MODE === 'areas'){
+    const hr = document.getElementById('sel-h-row'); if(hr){ hr.style.display = 'none'; }
+  }
+  const sl = document.getElementById('status-left');
+  if(sl){
+    sl.textContent = DATA.meta.model + '  \u00B7  ' + DATA.meta.count + ' ' +
+      (MODE === 'areas' ? 'areas' : 'rooms') +
+      (DATA.meta.skipped ? ('  \u00B7  ' + DATA.meta.skipped + ' skipped') : '');
+  }
+  const sr = document.getElementById('status-right');
+  if(sr){ sr.textContent = 'Generated ' + DATA.meta.generated + '  \u00B7  flat surfaces at level elevation'; }
+  const pip = document.querySelector('#statusbar .pip');
+  if(pip){ pip.style.background = '#55A868'; pip.style.boxShadow = '0 0 0 3px rgba(85,168,104,.18)'; }
+
+  // mode-aware UI labels (areas vs rooms)
+  const noun = (MODE === 'areas') ? 'areas' : 'rooms';
+  const Noun = (MODE === 'areas') ? 'Areas' : 'Rooms';
+  const ll = document.getElementById('lbl-toggle-label');
+  if(ll){ ll.textContent = Noun.slice(0,-1) + ' labels'; }          // "Area labels" / "Room labels"
+  const mc = document.getElementById('m-count-label');
+  if(mc){ mc.textContent = Noun; }                                  // "Areas" / "Rooms"
+  const rb = document.getElementById('refresh');
+  if(rb){ rb.textContent = 'Refresh ' + Noun + ' from Revit model'; }
+})();
+
+/* ============================================================
+   THREE.JS SCENE
+   ============================================================ */
+const canvas = document.getElementById('c');
+const wrap   = document.getElementById('canvas-wrap');
+const renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setClearColor(0x000000,0);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xe2e8ef, SPAN*1.7, SPAN*4.6);
+
+const persp = new THREE.PerspectiveCamera(42, 1, 0.1, 20000);
+const ortho = new THREE.OrthographicCamera(-1,1,1,-1,-200,400);
+let active = persp;
+
+// lighting
+scene.add(new THREE.AmbientLight(0xffffff,0.18));
+const hemi = new THREE.HemisphereLight(0xffffff,0xb8c2cf,0.78); scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff,0.62);
+dir.position.set(SPAN*0.7, SPAN*1.5 + STACK, SPAN*0.5);
+dir.castShadow = true;
+dir.shadow.mapSize.set(2048,2048);
+dir.shadow.camera.left=-SPAN; dir.shadow.camera.right=SPAN;
+dir.shadow.camera.top=SPAN; dir.shadow.camera.bottom=-SPAN;
+dir.shadow.camera.near=1; dir.shadow.camera.far=SPAN*4 + STACK*2;
+dir.shadow.bias=-0.0004;
+scene.add(dir);
+
+// ground shadow catcher + grid (keeps the gradient backdrop visible)
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(SPAN*3.2, SPAN*3.2),
+  new THREE.ShadowMaterial({opacity:0.14})
+);
+ground.rotation.x = -Math.PI/2; ground.position.y = -0.05; ground.receiveShadow = true;
+ground.material.depthWrite = false;
+scene.add(ground);
+
+// build one mesh + edge outline per space
+const root = new THREE.Group(); scene.add(root);
+const meshObjects = [];
+const records = {};   // id -> {mesh, edge, space}
+
+function buildShape(s){
+  const sh = new THREE.Shape();
+  const o = s.loop;
+  sh.moveTo(o[0][0], o[0][1]);
+  for(let i=1;i<o.length;i++){ sh.lineTo(o[i][0], o[i][1]); }
+  sh.closePath();
+  if(s.holes && s.holes.length){
+    s.holes.forEach(function(hp){
+      if(hp.length < 3){ return; }
+      const path = new THREE.Path();
+      path.moveTo(hp[0][0], hp[0][1]);
+      for(let i=1;i<hp.length;i++){ path.lineTo(hp[i][0], hp[i][1]); }
+      path.closePath();
+      sh.holes.push(path);
+    });
+  }
+  return sh;
+}
+SPACES.forEach(function(s){
+  // flat fill of the boundary loop, laid in the level plane (no extrusion)
+  const geo = new THREE.ShapeGeometry(buildShape(s));
+  const mat = new THREE.MeshStandardMaterial({
+    color:new THREE.Color(s.color), roughness:0.9, metalness:0.0,
+    side:THREE.DoubleSide
+  });
+  mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 0.0;
+  mat.transparent = true; mat.opacity = 1.0;
+  mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 1;
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI/2;       // shape XY -> world XZ (plan onto ground)
+  mesh.position.y = s.baseZ;          // sit on its level
+  mesh.receiveShadow = true;
+  mesh.userData.id = s.id;
+  root.add(mesh);
+
+  const edge = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({color:0x2b3440, transparent:true, opacity:0.6})
+  );
+  mesh.add(edge);
+
+  meshObjects.push(mesh);
+  records[s.id] = {mesh:mesh, edge:edge, space:s};
+});
+
+/* ---- camera controller (hand-rolled: orbit / pan / zoom) ---- */
+let mode = '3D';
+const target = new THREE.Vector3(0, STACK*0.5, 0);
+const sph = new THREE.Spherical(SPAN*1.45, 1.02, 0.85);   // radius, phi, theta
+let orthoZoom = 1.0;
+const ORTHO_F = SPAN*0.62;
+let vpW = 1, vpH = 1;
+
+function updateCamera(){
+  if(mode === '3D'){
+    const off = new THREE.Vector3().setFromSpherical(sph);
+    persp.position.copy(target).add(off);
+    persp.up.set(0,1,0);
+    persp.lookAt(target);
+    active = persp;
+  } else {
+    ortho.position.set(target.x,120,target.z);
+    ortho.up.set(0,0,-1);
+    ortho.lookAt(target.x,0,target.z);
+    ortho.zoom = orthoZoom; ortho.updateProjectionMatrix();
+    active = ortho;
+  }
+}
+
+function doPan(dx,dy){
+  if(mode === '3D'){
+    persp.updateMatrixWorld();
+    const right = new THREE.Vector3().setFromMatrixColumn(persp.matrixWorld,0);
+    const up    = new THREE.Vector3().setFromMatrixColumn(persp.matrixWorld,1);
+    const k = 2 * sph.radius * Math.tan((persp.fov*Math.PI/180)/2) / vpH;
+    target.addScaledVector(right, -dx*k);
+    target.addScaledVector(up,     dy*k);
+  } else {
+    const worldH = (ortho.top - ortho.bottom) / orthoZoom;
+    const upp = worldH / vpH;
+    target.x -= dx*upp;
+    target.z -= dy*upp;
+  }
+}
+
+let dragging=false, btn=0, lastX=0, lastY=0, moved=0;
+canvas.addEventListener('pointerdown', function(e){
+  dragging=true; btn=e.button; lastX=e.clientX; lastY=e.clientY; moved=0;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', function(e){
+  if(dragging){
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    lastX=e.clientX; lastY=e.clientY; moved += Math.abs(dx)+Math.abs(dy);
+    const pan = (btn===2) || (btn===0 && e.shiftKey) || (mode==='PLAN' && btn===0);
+    if(mode==='3D' && !pan){
+      sph.theta -= dx*0.005;
+      sph.phi   -= dy*0.005;
+      sph.phi = Math.max(0.12, Math.min(1.45, sph.phi));
+    } else {
+      doPan(dx,dy);
+    }
+    updateCamera();
+  } else {
+    hover(e);
+  }
+});
+canvas.addEventListener('pointerup', function(e){
+  dragging=false;
+  try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+  if(moved < 5) pick(e);
+});
+canvas.addEventListener('wheel', function(e){
+  e.preventDefault();
+  // Find a world pivot under the cursor: prefer a mesh hit, fall back to y=0 plane
+  const r = canvas.getBoundingClientRect();
+  const nx = ((e.clientX-r.left)/r.width)*2 - 1;
+  const ny = -((e.clientY-r.top)/r.height)*2 + 1;
+  ray.setFromCamera(new THREE.Vector2(nx,ny), active);
+  let pivot = null;
+  const hits = ray.intersectObjects(meshObjects, false);
+  for(let i=0;i<hits.length;i++){ if(hits[i].object.visible !== false){ pivot = hits[i].point.clone(); break; } }
+  if(!pivot){
+    const plane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+    const p = new THREE.Vector3();
+    if(ray.ray.intersectPlane(plane, p)) pivot = p;
+  }
+
+  // Magnification: scroll up = zoom in (mag>1), scroll down = zoom out (mag<1)
+  const mag = (e.deltaY < 0) ? 1.1 : (1/1.1);
+
+  let applied = true;
+  if(mode === '3D'){
+    const newRadius = sph.radius / mag;
+    const clamped = Math.max(SPAN*0.25, Math.min(SPAN*4.5, newRadius));
+    applied = (clamped === newRadius);
+    sph.radius = clamped;
+  } else {
+    const newZoom = orthoZoom * mag;
+    const clamped = Math.max(0.25, Math.min(6, newZoom));
+    applied = (clamped === newZoom);
+    orthoZoom = clamped;
+  }
+
+  // Shift target so the pivot stays under the cursor (only when zoom actually changed).
+  if(pivot && applied){
+    const shift = 1 - 1/mag;
+    target.x += shift * (pivot.x - target.x);
+    target.z += shift * (pivot.z - target.z);
+    if(mode === '3D') target.y += shift * (pivot.y - target.y);
+  }
+  updateCamera();
+}, {passive:false});
+canvas.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+canvas.addEventListener('pointerleave', function(){ hoveredId=null; updateHighlight(); hideTooltip(); });
+
+/* ---- picking + highlight ---- */
+const ray = new THREE.Raycaster();
+let hoveredId = null;
+const selectedIds = new Set();          // multi-row selection
+let selectionAnchor = null;             // last clicked id (for shift-range)
+
+function pickAt(e){
+  const r = canvas.getBoundingClientRect();
+  const nx = ((e.clientX-r.left)/r.width)*2 - 1;
+  const ny = -((e.clientY-r.top)/r.height)*2 + 1;
+  ray.setFromCamera(new THREE.Vector2(nx,ny), active);
+  const hits = ray.intersectObjects(meshObjects,false);
+  for(let i=0;i<hits.length;i++){ if(hits[i].object.visible !== false) return hits[i].object; }
+  return null;
+}
+function pick(e){
+  const m = pickAt(e);
+  selectSpace(m ? m.userData.id : null, e);
+}
+function hover(e){
+  const m = pickAt(e);
+  const id = m ? m.userData.id : null;
+  if(id !== hoveredId){ hoveredId = id; updateHighlight(); }
+  if(id){ showTooltip(e, records[id].space); } else { hideTooltip(); }
+}
+// user-tunable selection appearance (driven by Display sliders)
+let fadeOpacity   = 0.22;
+let selectGlow    = 0.55;
+let selectColorHex = 0x2f88e6;
+
+function updateHighlight(){
+  const anySel = selectedIds.size > 0;
+  for(const id in records){
+    const rec = records[id];
+    const sel = selectedIds.has(id);
+    const hov = id === hoveredId;
+    rec.mesh.material.emissiveIntensity = sel ? selectGlow : (hov ? 0.14 : 0.0);
+    rec.mesh.material.opacity = anySel ? (sel ? 1.0 : fadeOpacity) : 1.0;
+    rec.edge.material.color.setHex(sel ? selectColorHex : 0x2b3440);
+    rec.edge.material.opacity = anySel ? (sel ? 1.0 : 0.0) : 0.55;
+  }
+}
+
+// section-collapse buttons (Levels, Schemes, Display, Summary, Selection)
+document.querySelectorAll('.sec-collapse').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    const sec = btn.closest('.sec');
+    const c = sec.classList.toggle('collapsed');
+    btn.textContent = c ? 'Expand' : 'Collapse';
+  });
+});
+
+// Navigation help popover toggle (click open / outside-click close)
+(function(){
+  const btn = document.getElementById('nav-help');
+  const pop = document.getElementById('nav-help-pop');
+  if(!btn || !pop) return;
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    pop.classList.toggle('open');
+  });
+  document.addEventListener('click', function(e){
+    if(pop.classList.contains('open') && !pop.contains(e.target) && e.target !== btn){
+      pop.classList.remove('open');
+    }
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') pop.classList.remove('open');
+  });
+})();
+
+// Breakdown bar / pie mode switch
+document.querySelectorAll('.bd-mode-btn').forEach(function(b){
+  b.addEventListener('click', function(){
+    breakdownMode = b.getAttribute('data-bdmode');
+    document.querySelectorAll('.bd-mode-btn').forEach(function(o){
+      o.classList.toggle('on', o === b);
+    });
+    barsBox.style.display = (breakdownMode === 'bars') ? '' : 'none';
+    pieBox.style.display  = (breakdownMode === 'pie')  ? '' : 'none';
+  });
+});
+
+// Selection-only toggle in the schedule bar
+(function(){
+  const btn = document.getElementById('sel-only-toggle');
+  if(!btn) return;
+  btn.addEventListener('click', function(){
+    selectionOnlyMode = !selectionOnlyMode;
+    btn.classList.toggle('on', selectionOnlyMode);
+    updateTableBody();
+  });
+})();
+
+// Display sliders feed selection appearance live
+(function(){
+  const fs = document.getElementById('fade-slider');
+  const fv = document.getElementById('fade-val');
+  const gs = document.getElementById('glow-slider');
+  const gv = document.getElementById('glow-val');
+  const hc = document.getElementById('hl-color');
+  if(fs){ fs.addEventListener('input', function(){
+    fadeOpacity = parseFloat(fs.value);
+    fv.textContent = fadeOpacity.toFixed(2);
+    updateHighlight();
+  });}
+  if(gs){ gs.addEventListener('input', function(){
+    selectGlow = parseFloat(gs.value);
+    gv.textContent = selectGlow.toFixed(2);
+    updateHighlight();
+  });}
+  if(hc){ hc.addEventListener('input', function(){
+    selectColorHex = parseInt(hc.value.slice(1), 16);
+    updateHighlight();
+  });}
+})();
+
+/* ---- selection helpers (multi-row aware) ---- */
+function currentTableOrder(){
+  let vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
+  if(sortBy){
+    vis = vis.slice().sort(function(a,b){
+      const va = sortValue(a, sortBy), vb = sortValue(b, sortBy);
+      if(va<vb) return -1*sortDir;
+      if(va>vb) return  1*sortDir;
+      return 0;
+    });
+  }
+  return vis.map(function(s){ return s.id; });
+}
+let selectionOnlyMode = false;
+
+function selectSpace(id, ev){
+  if(!id){
+    if(ev && (ev.ctrlKey || ev.metaKey || ev.shiftKey)) return;   // modified click on empty: no-op
+    selectedIds.clear(); selectionAnchor = null;
+    updateHighlight(); updateSelectionCard(); updateTableSelection();
+    if(selectionOnlyMode) updateTableBody();
+    return;
+  }
+  if(ev && ev.shiftKey && selectionAnchor){
+    const rows = currentTableOrder();
+    const ai = rows.indexOf(selectionAnchor);
+    const bi = rows.indexOf(id);
+    if(ai < 0 || bi < 0){
+      selectedIds.clear(); selectedIds.add(id); selectionAnchor = id;
+    } else {
+      const lo = Math.min(ai,bi), hi = Math.max(ai,bi);
+      selectedIds.clear();
+      for(let i=lo;i<=hi;i++){ selectedIds.add(rows[i]); }
+    }
+  } else if(ev && (ev.ctrlKey || ev.metaKey)){
+    if(selectedIds.has(id)){ selectedIds.delete(id); }
+    else                   { selectedIds.add(id);   }
+    selectionAnchor = id;
+  } else {
+    selectedIds.clear(); selectedIds.add(id); selectionAnchor = id;
+  }
+  updateHighlight(); updateSelectionCard(); updateTableSelection();
+  if(selectionOnlyMode) updateTableBody();
+}
+
+/* ---- tooltip ---- */
+const tip = document.getElementById('tooltip');
+function showTooltip(e, s){
+  const r = wrap.getBoundingClientRect();
+  tip.innerHTML = '<div class="tt-name">'+s.name+'</div>'+
+                  '<div class="tt-meta">'+s.levelName+' &middot; '+s.dept+' &middot; '+s.area.toFixed(1)+' m&sup2;</div>';
+  tip.style.display='block';
+  let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+  if(x + tip.offsetWidth > r.width)  x = e.clientX - r.left - tip.offsetWidth - 14;
+  if(y + tip.offsetHeight > r.height) y = e.clientY - r.top - tip.offsetHeight - 14;
+  tip.style.left = x+'px'; tip.style.top = y+'px';
+}
+function hideTooltip(){ tip.style.display='none'; }
+
+/* ---- labels overlay ---- */
+const labelLayer = document.getElementById('labels');
+const labelEls = {};
+
+// Multi-select label source: Name + Number + any shared Identity Data params.
+const LABEL_PARAMS = DATA.labelParams || [];
+const ALL_LABEL_FIELDS = ['Name','Number'].concat(LABEL_PARAMS);
+// start with no labels activated; user picks them from the Display checklist
+const selectedLabels = [];
+
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+  });
+}
+function valueOf(s, field){
+  if(field === 'Name'){ return s.name || ''; }
+  if(field === 'Number'){ return s.number || ''; }
+  return (s.params && s.params[field]) ? s.params[field] : '';
+}
+function labelText(s){
+  const parts = [];
+  for(let i=0;i<selectedLabels.length;i++){
+    const v = valueOf(s, selectedLabels[i]);
+    if(v) parts.push(v);
+  }
+  return parts.join(' \u00B7 ');
+}
+
+// "No usable data" detector.  Catches null / undefined, empty strings,
+// whitespace-only strings, the literal N/A (any case) and hyphen / en-dash
+// / em-dash. We don't treat "0" as empty because zero is a legitimate value
+// for numeric params.
+function isEmptyVal(v){
+  if(v == null) return true;
+  const s = String(v).trim();
+  if(s === '') return true;
+  const low = s.toLowerCase();
+  if(low === 'n/a' || low === 'na') return true;
+  if(s === '-' || s === '\u2013' || s === '\u2014') return true;
+  return false;
+}
+
+// Fields whose value is empty (per the rule above) for every space in
+// the loaded dataset. Used by the column auto-hide and the label-checklist
+// disable logic so they always agree. If there are no spaces at all the
+// set stays empty (nothing to decide on).
+const EMPTY_FIELDS = new Set();
+if(SPACES.length > 0){
+  ALL_LABEL_FIELDS.forEach(function(f){
+    if(SPACES.every(function(s){ return isEmptyVal(valueOf(s, f)); })){
+      EMPTY_FIELDS.add(f);
+    }
+  });
+}
+
+// Create one DOM label per space
+SPACES.forEach(function(s){
+  const d = document.createElement('div');
+  d.className='lbl'; d.textContent=labelText(s); d.style.display='none';
+  labelLayer.appendChild(d); labelEls[s.id]=d;
+});
+function relabel(){
+  for(const id in labelEls){ labelEls[id].textContent = labelText(records[id].space); }
+}
+
+// Build the Label shows checklist
+(function(){
+  const box = document.getElementById('lbl-list');
+  if(!box){ return; }
+  ALL_LABEL_FIELDS.forEach(function(o){
+    const row = document.createElement('label'); row.className='crow';
+    const empty = EMPTY_FIELDS.has(o);
+    if(empty) row.classList.add('crow-empty');
+    const checked  = (selectedLabels.indexOf(o) >= 0) ? ' checked' : '';
+    const disabled = empty ? ' disabled' : '';
+    const titleAttr = empty ? ' title="No data for this parameter"' : '';
+    row.innerHTML = '<input type="checkbox" data-lbl="'+escapeHtml(o)+'"'+checked+disabled+'>'+
+                    '<span class="cname"'+titleAttr+'>'+escapeHtml(o)+'</span>';
+    row.querySelector('input').addEventListener('change', function(ev){
+      const v = ev.target.getAttribute('data-lbl');
+      const i = selectedLabels.indexOf(v);
+      if(ev.target.checked){ if(i < 0) selectedLabels.push(v); }
+      else                 { if(i >= 0) selectedLabels.splice(i, 1); }
+      onLabelsChanged();
+    });
+    box.appendChild(row);
+  });
+})();
+
+// ---- group colours (stable per current label combination) ----
+const PALETTE_LBL = ['#4C72B0','#55A868','#C9A33B','#8A8F98','#8E6FB0','#C44E52',
+                    '#4FA3A3','#B07AA1','#D08C3F','#6B8E5A','#5A7FB0','#A0563B',
+                    '#7E9CC4','#9C9C5E','#6FAF92','#B5727E'];
+let groupColours = {};
+function updateGroupColours(){
+  const keys = new Set();
+  SPACES.forEach(function(s){
+    const k = labelText(s); if(k) keys.add(k);
+  });
+  const sorted = Array.from(keys).sort();
+  groupColours = {};
+  sorted.forEach(function(k,i){ groupColours[k] = PALETTE_LBL[i % PALETTE_LBL.length]; });
+}
+
+// ---- recolorise meshes by label value (single-label only) ----
+let recolorise = false;
+function applyMeshColours(){
+  const useLabel = recolorise && selectedLabels.length === 1;
+  SPACES.forEach(function(s){
+    const m = records[s.id].mesh;
+    if(useLabel){
+      const k = labelText(s);
+      m.material.color.set(groupColours[k] || s.color);
+    } else {
+      m.material.color.set(s.color);
+    }
+  });
+}
+const recolRow = document.getElementById('recol-row');
+const recolToggle = document.getElementById('recol-toggle');
+recolToggle.addEventListener('change', function(){
+  recolorise = recolToggle.checked;
+  applyMeshColours();
+});
+function updateRecolVisibility(){
+  if(selectedLabels.length === 1){
+    recolRow.style.display = '';
+  } else {
+    recolRow.style.display = 'none';
+    if(recolorise){ recolToggle.checked = false; recolorise = false; }
+  }
+}
+
+function onLabelsChanged(){
+  updateGroupColours();
+  relabel();
+  updateRecolVisibility();
+  applyMeshColours();
+  updateSummary();
+}
+
+let showLabels = false;
+const _v = new THREE.Vector3();
+function updateLabels(){
+  if(!showLabels){ return; }
+  for(let i=0;i<SPACES.length;i++){
+    const s = SPACES[i], el = labelEls[s.id], rec = records[s.id];
+    if(rec.mesh.visible === false){ el.style.display='none'; continue; }
+    if(!el.textContent){ el.style.display='none'; continue; }
+    _v.set(s.cx-OX, s.baseZ + 0.4, -(s.cy-OY));
+    _v.project(active);
+    if(_v.z > 1){ el.style.display='none'; continue; }
+    el.style.display='block';
+    el.style.left = ((_v.x*0.5+0.5)*vpW)+'px';
+    el.style.top  = ((-_v.y*0.5+0.5)*vpH)+'px';
+  }
+}
+function clearLabels(){ for(const id in labelEls) labelEls[id].style.display='none'; }
+
+/* ============================================================
+   FILTER STATE + UI
+   ============================================================ */
+const activeLevels = new Set(LEVELS.map(function(l){return l.id;}));
+// In areas mode, start with only NIA ticked if it exists in the loaded
+// schemes; in rooms mode, start with every department ticked.
+const activeDepts  = new Set(
+  (MODE === 'areas' && DEPT_ORDER.indexOf('NIA') >= 0) ? ['NIA'] : DEPT_ORDER
+);
+
+// counts
+const levelCounts = {}; LEVELS.forEach(function(l){ levelCounts[l.id]=SPACES.filter(function(s){return s.levelId===l.id;}).length; });
+const deptCounts  = {}; DEPT_ORDER.forEach(function(d){ deptCounts[d]=SPACES.filter(function(s){return s.dept===d;}).length; });
+
+// build level checkboxes
+const levelList = document.getElementById('level-list');
+LEVELS.forEach(function(l){
+  const row = document.createElement('label'); row.className='crow';
+  row.innerHTML = '<input type="checkbox" checked data-level="'+l.id+'">'+
+                  '<span class="cname">'+l.name+'</span>'+
+                  '<span class="ccount">'+levelCounts[l.id]+'</span>';
+  row.querySelector('input').addEventListener('change', function(ev){
+    if(ev.target.checked) activeLevels.add(l.id); else activeLevels.delete(l.id);
+    applyFilters();
+  });
+  levelList.appendChild(row);
+});
+// build department checkboxes
+const deptList = document.getElementById('dept-list');
+DEPT_ORDER.forEach(function(d){
+  const row = document.createElement('label'); row.className='crow';
+  const ck = activeDepts.has(d) ? ' checked' : '';
+  row.innerHTML = '<input type="checkbox"'+ck+' data-dept="'+d+'">'+
+                  '<span class="swatch" style="background:'+DEPARTMENTS[d].color+'"></span>'+
+                  '<span class="cname">'+d+'</span>'+
+                  '<span class="ccount">'+deptCounts[d]+'</span>';
+  row.querySelector('input').addEventListener('change', function(ev){
+    if(ev.target.checked) activeDepts.add(d); else activeDepts.delete(d);
+    applyFilters();
+  });
+  deptList.appendChild(row);
+});
+
+// all / clear
+document.querySelectorAll('[data-all]').forEach(function(b){
+  b.addEventListener('click', function(){
+    const grp=b.getAttribute('data-all');
+    document.querySelectorAll('input[data-'+grp+']').forEach(function(inp){ inp.checked=true; inp.dispatchEvent(new Event('change')); });
+  });
+});
+document.querySelectorAll('[data-clear]').forEach(function(b){
+  b.addEventListener('click', function(){
+    const grp=b.getAttribute('data-clear');
+    document.querySelectorAll('input[data-'+grp+']').forEach(function(inp){ inp.checked=false; inp.dispatchEvent(new Event('change')); });
+  });
+});
+
+// labels toggle
+document.getElementById('lbl-toggle').addEventListener('change', function(e){
+  showLabels = e.target.checked;
+  if(!showLabels) clearLabels();
+});
+
+// mode toggle
+const m3d = document.getElementById('m3d'), mplan = document.getElementById('mplan');
+const compass = document.getElementById('compass');
+function setMode(m){
+  mode = m;
+  m3d.classList.toggle('on', m==='3D');
+  mplan.classList.toggle('on', m==='PLAN');
+  compass.style.display = (m==='PLAN') ? 'flex' : 'none';
+  clearLabels();
+  updateCamera();
+}
+m3d.addEventListener('click', function(){ setMode('3D'); });
+mplan.addEventListener('click', function(){ setMode('PLAN'); });
+document.getElementById('reset').addEventListener('click', function(){
+  target.set(0,STACK*0.5,0); sph.set(SPAN*1.45,1.02,0.85); orthoZoom=1.0; updateCamera();
+});
+document.getElementById('refresh').addEventListener('click', function(){
+  if(window.chrome && window.chrome.webview){
+    this.textContent = 'Refreshing\u2026'; this.disabled = true;
+    window.chrome.webview.postMessage('refresh');   // Revit re-reads, then reloads this page
+  } else {
+    location.reload();                               // browser fallback: re-read model-data.js
+  }
+});
+
+/* ---- apply filters + summary ---- */
+function applyFilters(){
+  SPACES.forEach(function(s){
+    records[s.id].mesh.visible = activeLevels.has(s.levelId)
+                              && activeDepts.has(s.dept)
+                              && passesTableFilters(s);
+  });
+  // drop any selected ids that are no longer visible
+  const gone = [];
+  selectedIds.forEach(function(id){
+    if(records[id].mesh.visible === false) gone.push(id);
+  });
+  gone.forEach(function(id){ selectedIds.delete(id); });
+  if(selectionAnchor && records[selectionAnchor].mesh.visible === false){
+    selectionAnchor = null;
+  }
+  updateHighlight();
+  updateSummary();
+  updateSelectionCard();
+  recomputeColumns();
+  recomputeLabelChecklist();
+  updateTable();
+}
+
+const elArea = document.getElementById('m-area');
+const elCount = document.getElementById('m-count');
+const barsBox = document.getElementById('bars');
+const pieBox  = document.getElementById('pie');
+let breakdownMode = 'bars';   // 'bars' or 'pie'
+
+function renderBars(groups, total){
+  barsBox.innerHTML = '';
+  groups.forEach(function(g){
+    const pct = total > 0 ? (g.area/total*100) : 0;
+    const el = document.createElement('div'); el.className='bar';
+    el.innerHTML =
+      '<span class="bsw" style="background:'+g.color+'"></span>'+
+      '<div class="bbody">'+
+        '<div class="bname"><span>'+escapeHtml(g.key)+'</span><span class="bval">'+g.area.toFixed(1)+' m&sup2; &middot; '+g.count+'</span></div>'+
+        '<div class="btrack"><div class="bfill" style="width:'+pct.toFixed(1)+'%;background:'+g.color+'"></div></div>'+
+      '</div>'+
+      '<span class="bpct">'+pct.toFixed(0)+'%</span>';
+    barsBox.appendChild(el);
+  });
+}
+
+function renderPie(groups, total){
+  if(total <= 0 || groups.length === 0){ pieBox.innerHTML = ''; return; }
+  const cx = 75, cy = 75, r = 62;
+  let acc = 0;
+  let svg = '<svg viewBox="0 0 150 150" class="pie-svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">';
+  if(groups.length === 1){
+    svg += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+groups[0].color+'" stroke="#fff" stroke-width="1.5"/>';
+  } else {
+    groups.forEach(function(g){
+      if(g.area <= 0) return;
+      const startA = (acc / total) * Math.PI * 2 - Math.PI/2;
+      acc += g.area;
+      const endA = (acc / total) * Math.PI * 2 - Math.PI/2;
+      const x1 = cx + r * Math.cos(startA);
+      const y1 = cy + r * Math.sin(startA);
+      const x2 = cx + r * Math.cos(endA);
+      const y2 = cy + r * Math.sin(endA);
+      const largeArc = (endA - startA) > Math.PI ? 1 : 0;
+      svg += '<path d="M '+cx+' '+cy+' L '+x1.toFixed(2)+' '+y1.toFixed(2)+
+             ' A '+r+' '+r+' 0 '+largeArc+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+
+             ' Z" fill="'+g.color+'" stroke="#fff" stroke-width="1.5"/>';
+    });
+  }
+  svg += '</svg>';
+  let legend = '<div class="pie-legend">';
+  groups.forEach(function(g){
+    const pct = total > 0 ? (g.area / total * 100).toFixed(0) : 0;
+    legend += '<div class="pie-row">'+
+              '<span class="psw" style="background:'+g.color+'"></span>'+
+              '<span class="pn" title="'+escapeHtml(g.key)+'">'+escapeHtml(g.key)+'</span>'+
+              '<span class="pv">'+g.area.toFixed(1)+' m&sup2; &middot; '+g.count+'</span>'+
+              '<span class="pp">'+pct+'%</span>'+
+              '</div>';
+  });
+  legend += '</div>';
+  pieBox.innerHTML = svg + legend;
+}
+
+function updateSummary(){
+  const vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
+  const total = vis.reduce(function(a,s){ return a+s.area; },0);
+  elArea.innerHTML = total.toFixed(1)+'<small>m&sup2;</small>';
+  elCount.textContent = vis.length;
+
+  if(selectedLabels.length === 0){
+    const hint = '<div style="font-size:12px;color:var(--ink-faint);padding:6px 0;">'+
+      'Select at least one label to see a breakdown.</div>';
+    barsBox.innerHTML = hint;
+    pieBox.innerHTML  = hint;
+    return;
+  }
+
+  // Group visible spaces by their current label text
+  const byKey = {};
+  vis.forEach(function(s){
+    const k = labelText(s) || '(blank)';
+    if(!byKey[k]){ byKey[k] = {area:0, count:0}; }
+    byKey[k].area  += s.area;
+    byKey[k].count += 1;
+  });
+  const groups = Object.keys(byKey)
+    .sort(function(a,b){ return byKey[b].area - byKey[a].area; })
+    .map(function(k){
+      return {key:k, area:byKey[k].area, count:byKey[k].count,
+              color:(groupColours[k] || '#8A8F98')};
+    });
+
+  renderBars(groups, total);
+  renderPie(groups, total);
+}
+
+/* ---- selection card ---- */
+const selEmpty=document.getElementById('sel-empty'), selCard=document.getElementById('sel-card');
+function updateSelectionCard(){
+  const hRow = document.getElementById('sel-h-row');
+  const pbox = document.getElementById('sel-params');
+
+  if(selectedIds.size === 0){
+    selEmpty.style.display='block'; selCard.style.display='none'; return;
+  }
+  selEmpty.style.display='none'; selCard.style.display='block';
+
+  if(selectedIds.size > 1){
+    // aggregate card for multi-selection
+    let total = 0;
+    selectedIds.forEach(function(id){ total += records[id].space.area; });
+    document.getElementById('sel-name').textContent = selectedIds.size + ' ' +
+      (MODE === 'areas' ? 'areas' : 'rooms') + ' selected';
+    document.getElementById('sel-sw').style.background = 'transparent';
+    document.getElementById('sel-deptname').textContent = '';
+    document.getElementById('sel-level').textContent = '\u2014';   // em dash
+    document.getElementById('sel-area').textContent = total.toFixed(1)+' m\u00B2';
+    if(hRow) hRow.style.display = 'none';
+    if(pbox) pbox.innerHTML = '';
+    return;
+  }
+
+  // single-space card (full detail)
+  const id = selectionAnchor || selectedIds.values().next().value;
+  const s = records[id].space;
+  document.getElementById('sel-name').textContent = s.name;
+  document.getElementById('sel-sw').style.background = s.color;
+  document.getElementById('sel-deptname').textContent = s.dept;
+  document.getElementById('sel-level').textContent = s.levelName;
+  document.getElementById('sel-area').textContent = s.area.toFixed(1)+' m\u00B2';
+  document.getElementById('sel-h').textContent = s.height.toFixed(1)+' m';
+  if(hRow) hRow.style.display = (MODE === 'areas') ? 'none' : '';
+  if(pbox){
+    let html = '';
+    if(s.number){
+      html += '<div class="kv"><span class="k">Number</span><span class="v">'+escapeHtml(s.number)+'</span></div>';
+    }
+    LABEL_PARAMS.forEach(function(p){
+      const v = (s.params && s.params[p]) ? s.params[p] : '';
+      html += '<div class="kv"><span class="k">'+escapeHtml(p)+'</span><span class="v">'+escapeHtml(v)+'</span></div>';
+    });
+    pbox.innerHTML = html;
+  }
+}
+
+/* ============================================================
+   SCHEDULE TABLE  (collapsible, draggable columns, per-column sort + filter)
+   ============================================================ */
+const tablePanel       = document.getElementById('tablepanel');
+const tableBody        = document.getElementById('table-body');
+const tableHead        = document.getElementById('table-head');
+const tableCount       = document.getElementById('table-count');
+const tableHiddenBox   = document.getElementById('table-hidden');
+const tableCollapseBtn = document.getElementById('table-collapse');
+const splitterEl       = document.getElementById('splitter');
+
+const AREA_COL  = 'Area (m\u00B2)';
+const BASE_COLS = ['Number','Name','Level', AREA_COL];
+
+const COL_RENDER = {
+  'Number':  function(s){ return ['num', s.number || '']; },
+  'Name':    function(s){ return ['nm',  s.name   || '']; },
+  'Level':   function(s){ return ['',    s.levelName || '']; },
+};
+COL_RENDER[AREA_COL] = function(s){ return ['num', s.area.toFixed(1)]; };
+LABEL_PARAMS.forEach(function(p){
+  COL_RENDER[p] = function(s){ return ['', (s.params && s.params[p]) ? s.params[p] : '']; };
+});
+
+// Mutable column state
+const colOrder   = BASE_COLS.concat(LABEL_PARAMS);
+const hiddenCols = new Set();
+// Column visibility is data-driven against the *currently visible* spaces:
+// a column is hidden when no visible row renders usable data for it. This
+// makes the schedule respond to scheme/level changes -- switching the area
+// scheme re-evaluates which columns have data. Two override sets let the
+// user pin a column's state, and those intents survive filter changes:
+//   colForceHide -- user clicked the header x on a column that has data
+//   colForceShow -- user restored (via "+" chip) a column that is auto-empty
+const colForceHide = new Set();
+const colForceShow = new Set();
+function recomputeColumns(){
+  const vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
+  hiddenCols.clear();
+  colOrder.forEach(function(c){
+    const autoEmpty = vis.length > 0 &&
+      vis.every(function(s){ return isEmptyVal(COL_RENDER[c](s)[1]); });
+    let hide = autoEmpty;
+    if(colForceShow.has(c)) hide = false;   // user pinned it visible
+    if(colForceHide.has(c)) hide = true;    // user pinned it hidden
+    if(hide) hiddenCols.add(c);
+  });
+  // Don't keep sorting by a column that's no longer shown.
+  if(sortBy && hiddenCols.has(sortBy)) sortBy = null;
+}
+
+// Mirrors recomputeColumns for the Display panel's "Label shows" checklist.
+// A row goes greyed + disabled when no visible space has usable data for
+// that field. A checkbox that's currently *checked* stays interactive even
+// when greyed, so the user can always uncheck a label whose data has gone
+// empty in the current view.
+function recomputeLabelChecklist(){
+  const vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
+  document.querySelectorAll('#lbl-list .crow').forEach(function(row){
+    const input = row.querySelector('input[data-lbl]');
+    if(!input) return;
+    const field = input.getAttribute('data-lbl');
+    const empty = vis.length === 0 ||
+                  vis.every(function(s){ return isEmptyVal(valueOf(s, field)); });
+    row.classList.toggle('crow-empty', empty);
+    input.disabled = empty && !input.checked;
+    const cname = row.querySelector('.cname');
+    if(cname){
+      if(empty) cname.setAttribute('title', 'No data for this parameter in the current view');
+      else      cname.removeAttribute('title');
+    }
+  });
+}
+const colFilters = {};        // colName -> lower-case substring
+let   sortBy     = null;
+let   sortDir    = 1;         // 1 asc, -1 desc
+let   dragCol    = null;
+
+function passesTableFilters(s){
+  for(const c in colFilters){
+    const ex = colFilters[c];
+    if(!ex || ex.size === 0) continue;
+    const r = COL_RENDER[c](s);
+    if(ex.has(String(r[1] || ''))) return false;
+  }
+  return true;
+}
+function sortValue(s, c){
+  if(c === AREA_COL) return s.area;
+  const r = COL_RENDER[c](s);
+  return String(r[1] || '').toLowerCase();
+}
+
+function updateTableHead(){
+  closeFilterPopover();          // structure is about to change
+  const cols = colOrder.filter(function(c){ return !hiddenCols.has(c); });
+  tableHead.innerHTML = cols.map(function(c){
+    const arrow      = (sortBy === c) ? (sortDir === 1 ? ' \u25B2' : ' \u25BC') : '';
+    const filtActive = !!(colFilters[c] && colFilters[c].size > 0);
+    const filtCls    = filtActive ? ' active' : '';
+    return '<th data-col="'+escapeHtml(c)+'" draggable="true">'+
+             '<div class="th-row1">'+
+               '<span class="th-label">'+escapeHtml(c)+
+                 '<span class="th-arrow">'+arrow+'</span></span>'+
+               '<button class="th-filter-btn'+filtCls+'" data-col="'+escapeHtml(c)+'" title="Filter" type="button">\u25BE</button>'+
+               '<button class="th-hide" data-col="'+escapeHtml(c)+'" title="Hide column" type="button">\u00D7</button>'+
+             '</div>'+
+           '</th>';
+  }).join('');
+  const ths = tableHead.children;
+  for(let i=0;i<ths.length;i++){ wireThEvents(ths[i]); }
+  updateHiddenChips();
+  updateResetButton();
+}
+
+function wireThEvents(th){
+  const col = th.getAttribute('data-col');
+  const label = th.querySelector('.th-label');
+  const hide  = th.querySelector('.th-hide');
+
+  // sort on label click
+  label.addEventListener('click', function(){
+    if(sortBy === col){
+      if(sortDir === 1) sortDir = -1;
+      else { sortBy = null; sortDir = 1; }
+    } else {
+      sortBy = col; sortDir = 1;
+    }
+    updateTableHead();
+    updateTableBody();
+  });
+  // hide column
+  hide.addEventListener('click', function(ev){
+    ev.stopPropagation();
+    colForceHide.add(col);
+    colForceShow.delete(col);
+    if(sortBy === col){ sortBy = null; }
+    recomputeColumns();
+    updateTableHead();
+    updateTableBody();
+  });
+  // filter button opens the Excel-style popover for this column
+  const filterBtn = th.querySelector('.th-filter-btn');
+  filterBtn.addEventListener('mousedown', function(ev){ ev.stopPropagation(); });
+  filterBtn.addEventListener('click', function(ev){
+    ev.stopPropagation();
+    toggleFilterPopover(col, filterBtn);
+  });
+
+  // column drag-and-drop
+  th.addEventListener('dragstart', function(ev){
+    dragCol = col;
+    try { ev.dataTransfer.setData('text/plain', col); ev.dataTransfer.effectAllowed = 'move'; } catch(_){}
+    th.classList.add('dragging');
+  });
+  th.addEventListener('dragend', function(){
+    th.classList.remove('dragging');
+    Array.from(tableHead.children).forEach(function(t){ t.classList.remove('drop-l','drop-r'); });
+    dragCol = null;
+  });
+  th.addEventListener('dragover', function(ev){
+    if(!dragCol || dragCol === col) return;
+    ev.preventDefault();
+    try { ev.dataTransfer.dropEffect = 'move'; } catch(_){}
+    const rect = th.getBoundingClientRect();
+    const after = (ev.clientX - rect.left) > rect.width/2;
+    Array.from(tableHead.children).forEach(function(t){ t.classList.remove('drop-l','drop-r'); });
+    th.classList.add(after ? 'drop-r' : 'drop-l');
+  });
+  th.addEventListener('drop', function(ev){
+    if(!dragCol || dragCol === col) return;
+    ev.preventDefault();
+    const rect = th.getBoundingClientRect();
+    const after = (ev.clientX - rect.left) > rect.width/2;
+    const from = dragCol;
+    const i = colOrder.indexOf(from); if(i>=0) colOrder.splice(i,1);
+    let j = colOrder.indexOf(col);    if(j<0) j = colOrder.length;
+    colOrder.splice(after ? j+1 : j, 0, from);
+    updateTableHead();
+    updateTableBody();
+  });
+}
+
+function updateTableBody(){
+  const cols = colOrder.filter(function(c){ return !hiddenCols.has(c); });
+  let vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
+  // Selection-only mode: when on and there's a selection, show only those rows.
+  if(selectionOnlyMode && selectedIds.size > 0){
+    vis = vis.filter(function(s){ return selectedIds.has(s.id); });
+  }
+  if(sortBy){
+    vis = vis.slice().sort(function(a,b){
+      const va = sortValue(a, sortBy), vb = sortValue(b, sortBy);
+      if(va<vb) return -1*sortDir;
+      if(va>vb) return  1*sortDir;
+      return 0;
+    });
+  }
+  tableCount.textContent = vis.length + ' visible';
+  const frag = document.createDocumentFragment();
+  vis.forEach(function(s){
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-id', s.id);
+    if(selectedIds.has(s.id)){ tr.className = 'sel'; }
+    let html = '';
+    for(let i=0;i<cols.length;i++){
+      const r = COL_RENDER[cols[i]](s);
+      const cls = r[0] ? ' class="'+r[0]+'"' : '';
+      html += '<td'+cls+'>'+escapeHtml(r[1])+'</td>';
+    }
+    tr.innerHTML = html;
+    tr.addEventListener('click', function(ev){
+      selectSpace(s.id, ev);
+    });
+    frag.appendChild(tr);
+  });
+  tableBody.innerHTML = '';
+  tableBody.appendChild(frag);
+}
+
+function updateHiddenChips(){
+  tableHiddenBox.innerHTML = '';
+  if(hiddenCols.size === 0){
+    tableHiddenBox.style.display = 'none'; return;
+  }
+  tableHiddenBox.style.display = '';
+  colOrder.forEach(function(c){
+    if(!hiddenCols.has(c)) return;
+    const b = document.createElement('button');
+    b.className = 'hide-chip'; b.setAttribute('type','button');
+    b.title = 'Show "'+c+'" again';
+    b.innerHTML = escapeHtml(c)+'<span class="chip-plus">+</span>';
+    b.addEventListener('click', function(){
+      colForceShow.add(c);
+      colForceHide.delete(c);
+      recomputeColumns();
+      updateTableHead();
+      updateTableBody();
+    });
+    tableHiddenBox.appendChild(b);
+  });
+}
+
+/* ---- filter popover (Excel-style per-column value picker) ---- */
+let currentFilterCol = null;
+const fpEl       = document.getElementById('filter-popover');
+const fpSearch   = document.getElementById('fp-search');
+const fpMaster   = document.getElementById('fp-master-cb');
+const fpList     = document.getElementById('fp-list');
+const fpClose    = document.getElementById('fp-close');
+
+function uniqueValuesFor(col){
+  const m = new Map();
+  // Only count values from spaces that pass the left-rail filters (levels +
+  // schemes). The popover therefore won't show values from area schemes the
+  // user has unticked in the left rail.
+  SPACES.forEach(function(s){
+    if(!activeLevels.has(s.levelId)) return;
+    if(!activeDepts.has(s.dept))     return;
+    const r = COL_RENDER[col](s);
+    const v = String(r[1] || '');
+    m.set(v, (m.get(v) || 0) + 1);
+  });
+  const entries = Array.from(m.entries());
+  if(col === AREA_COL || col === 'Number'){
+    entries.sort(function(a,b){
+      const na = parseFloat(a[0]), nb = parseFloat(b[0]);
+      if(!isNaN(na) && !isNaN(nb)){ return na - nb; }
+      return a[0].localeCompare(b[0]);
+    });
+  } else {
+    entries.sort(function(a,b){ return a[0].localeCompare(b[0]); });
+  }
+  return entries;
+}
+
+function renderPopoverList(){
+  const col = currentFilterCol; if(!col){ return; }
+  const ex = colFilters[col] || new Set();
+  const search = fpSearch.value.toLowerCase();
+  const entries = uniqueValuesFor(col);
+
+  fpList.innerHTML = '';
+  let shown = 0;
+  entries.forEach(function(pair){
+    const v = pair[0], count = pair[1];
+    if(search && v.toLowerCase().indexOf(search) < 0) return;
+    shown++;
+    const lab = document.createElement('label');
+    const isExcluded = ex.has(v);
+    const display = (v === '') ? '(blank)' : escapeHtml(v);
+    lab.innerHTML = '<input type="checkbox" data-v="'+escapeHtml(v)+'"'+(isExcluded ? '' : ' checked')+'>'+
+                    '<span class="vname">'+display+'</span>'+
+                    '<span class="vcount">'+count+'</span>';
+    fpList.appendChild(lab);
+  });
+  if(shown === 0){
+    const empty = document.createElement('div');
+    empty.className = 'fp-empty';
+    empty.textContent = 'No values match.';
+    fpList.appendChild(empty);
+  }
+  fpList.querySelectorAll('input').forEach(function(inp){
+    inp.addEventListener('change', function(){
+      const v = inp.getAttribute('data-v');
+      if(!colFilters[col]) colFilters[col] = new Set();
+      if(inp.checked) colFilters[col].delete(v);
+      else            colFilters[col].add(v);
+      if(colFilters[col].size === 0) delete colFilters[col];
+      applyFilters();
+      refreshFilterIndicator(col);
+      updateResetButton();
+      updateMasterCheckbox();
+    });
+  });
+  updateMasterCheckbox();
+}
+
+function updateMasterCheckbox(){
+  const col = currentFilterCol; if(!col) return;
+  const total = uniqueValuesFor(col).length;
+  const exSize = (colFilters[col] && colFilters[col].size) || 0;
+  if(exSize === 0){ fpMaster.checked = true;  fpMaster.indeterminate = false; }
+  else if(exSize >= total){ fpMaster.checked = false; fpMaster.indeterminate = false; }
+  else { fpMaster.indeterminate = true; }
+}
+
+fpMaster.addEventListener('change', function(){
+  const col = currentFilterCol; if(!col) return;
+  if(fpMaster.checked){
+    delete colFilters[col];
+  } else {
+    const search = fpSearch.value.toLowerCase();
+    const ex = new Set();
+    uniqueValuesFor(col).forEach(function(p){
+      const v = p[0];
+      if(!search || v.toLowerCase().indexOf(search) >= 0) ex.add(v);
+    });
+    if(ex.size === 0) delete colFilters[col];
+    else colFilters[col] = ex;
+  }
+  applyFilters();
+  refreshFilterIndicator(col);
+  updateResetButton();
+  renderPopoverList();
+});
+
+fpSearch.addEventListener('input', renderPopoverList);
+fpClose.addEventListener('click', closeFilterPopover);
+
+function refreshFilterIndicator(col){
+  const th = tableHead.querySelector('th[data-col="'+col+'"]');
+  if(!th) return;
+  const btn = th.querySelector('.th-filter-btn');
+  if(!btn) return;
+  const active = !!(colFilters[col] && colFilters[col].size > 0);
+  btn.classList.toggle('active', active);
+}
+
+function openFilterPopover(col, btnEl){
+  currentFilterCol = col;
+  fpEl.classList.add('open');
+  const r = btnEl.getBoundingClientRect();
+  const popW = 240;
+  const left = Math.max(8, Math.min(window.innerWidth - popW - 8, r.left));
+  const top  = Math.min(window.innerHeight - 320, r.bottom + 4);
+  fpEl.style.left = left + 'px';
+  fpEl.style.top  = top  + 'px';
+  fpSearch.value = '';
+  renderPopoverList();
+  setTimeout(function(){ fpSearch.focus(); }, 0);
+}
+function closeFilterPopover(){
+  fpEl.classList.remove('open');
+  currentFilterCol = null;
+}
+function toggleFilterPopover(col, btnEl){
+  if(fpEl.classList.contains('open') && currentFilterCol === col){
+    closeFilterPopover();
+  } else {
+    openFilterPopover(col, btnEl);
+  }
+}
+
+// close popover when clicking outside it
+document.addEventListener('mousedown', function(ev){
+  if(!fpEl.classList.contains('open')) return;
+  if(fpEl.contains(ev.target)) return;
+  if(ev.target.closest && ev.target.closest('.th-filter-btn')) return;
+  closeFilterPopover();
+});
+
+/* ---- reset-filters button ---- */
+const tableResetBtn = document.getElementById('table-reset');
+function updateResetButton(){
+  const any = Object.keys(colFilters).some(function(k){
+    return colFilters[k] && colFilters[k].size > 0;
+  });
+  tableResetBtn.disabled = !any;
+}
+tableResetBtn.addEventListener('click', function(){
+  if(tableResetBtn.disabled) return;
+  for(const k in colFilters){ delete colFilters[k]; }
+  closeFilterPopover();
+  applyFilters();
+  updateTableHead();
+});
+
+function updateTableSelection(){
+  const rows = tableBody.children;
+  for(let i=0;i<rows.length;i++){
+    const tr = rows[i];
+    tr.className = selectedIds.has(tr.getAttribute('data-id')) ? 'sel' : '';
+  }
+}
+
+// keep updateTable as a thin wrapper so existing callers still work
+function updateTable(){ updateTableHead(); updateTableBody(); }
+
+// ---- collapse: store and restore the splitter-set basis ----
+let _savedBasis = '240px';
+tableCollapseBtn.addEventListener('click', function(){
+  const collapsed = tablePanel.classList.toggle('collapsed');
+  if(collapsed){
+    _savedBasis = tablePanel.style.flexBasis || _savedBasis;
+    tablePanel.style.flexBasis = '';                 // .collapsed CSS takes over
+    splitterEl.classList.add('hidden');
+  } else {
+    tablePanel.style.flexBasis = _savedBasis;
+    splitterEl.classList.remove('hidden');
+  }
+  tableCollapseBtn.textContent = collapsed ? 'Expand' : 'Collapse';
+  setTimeout(onResize, 0);
+});
+
+// ---- splitter drag (resize the table panel) ----
+(function(){
+  const centre = document.getElementById('centre');
+  let dragging=false, startY=0, startH=0;
+  splitterEl.addEventListener('pointerdown', function(ev){
+    if(tablePanel.classList.contains('collapsed')) return;
+    dragging = true; startY = ev.clientY;
+    startH = tablePanel.getBoundingClientRect().height;
+    try{ splitterEl.setPointerCapture(ev.pointerId); }catch(_){}
+    document.body.style.userSelect='none';
+  });
+  splitterEl.addEventListener('pointermove', function(ev){
+    if(!dragging) return;
+    const dy = ev.clientY - startY;
+    const centreH = centre.getBoundingClientRect().height;
+    const h = Math.max(80, Math.min(centreH - 140, startH - dy));
+    tablePanel.style.flexBasis = h + 'px';
+  });
+  function endDrag(ev){
+    if(!dragging) return;
+    dragging = false;
+    try{ splitterEl.releasePointerCapture(ev.pointerId); }catch(_){}
+    document.body.style.userSelect = '';
+    setTimeout(onResize, 0);
+  }
+  splitterEl.addEventListener('pointerup',     endDrag);
+  splitterEl.addEventListener('pointercancel', endDrag);
+})();
+
+/* ============================================================
+   RESIZE + RENDER LOOP
+   ============================================================ */
+function onResize(){
+  vpW = wrap.clientWidth || 1; vpH = wrap.clientHeight || 1;
+  renderer.setSize(vpW, vpH, false);
+  persp.aspect = vpW/vpH; persp.updateProjectionMatrix();
+  const asp = vpW/vpH;
+  ortho.left=-ORTHO_F*asp; ortho.right=ORTHO_F*asp; ortho.top=ORTHO_F; ortho.bottom=-ORTHO_F;
+  ortho.updateProjectionMatrix();
+  updateCamera();
+}
+new ResizeObserver(onResize).observe(wrap);
+
+function loop(){
+  requestAnimationFrame(loop);
+  renderer.render(scene, active);
+  updateLabels();
+}
+
+// init
+onResize();
+updateCamera();
+onLabelsChanged();          // seeds groupColours + label text + mesh colours
+updateTableHead();          // builds the schedule headers (sort + filter UI lives there)
+applyFilters();             // visibility + summary + table body
+updateSelectionCard();
+loop();
+</script>
+</body>
+</html>
