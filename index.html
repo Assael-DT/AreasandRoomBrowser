@@ -424,15 +424,17 @@
   .lbl-grip:active{cursor:grabbing;}
   .lbl-main{display:flex;align-items:center;gap:9px;flex:1;min-width:0;margin:0;cursor:pointer;}
   .lbl-row.dragging{opacity:.45;}
-  /* per-scheme colour: the swatch itself is the picker */
-  .crow .dept-color{
-    flex:0 0 auto;width:13px;height:13px;padding:0;cursor:pointer;
-    border:1px solid var(--line-strong);border-radius:3px;background:none;
-    -webkit-appearance:none;appearance:none;
+  /* per-scheme colour: visible swatch span is the click target; hidden
+     color input pops the OS picker on click. */
+  .crow .dept-sw{
+    width:13px;height:13px;border-radius:3px;flex:0 0 auto;cursor:pointer;
+    border:1px solid var(--line-strong);
   }
-  .crow .dept-color::-webkit-color-swatch-wrapper{padding:0;}
-  .crow .dept-color::-webkit-color-swatch{border:none;border-radius:2px;}
-  .crow .dept-color::-moz-color-swatch{border:none;border-radius:2px;}
+  .crow .dept-sw:focus{outline:2px solid var(--accent,#2f88e6);outline-offset:1px;}
+  .crow .dept-color{
+    position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;
+    border:0;padding:0;margin:0;
+  }
 
   #vp-tools{
     position:absolute;top:12px;right:12px;display:flex;gap:8px;align-items:center;
@@ -1818,19 +1820,28 @@ DEPT_ORDER.forEach(function(d){
   const row = document.createElement('label'); row.className='crow';
   const ck = activeDepts.has(d) ? ' checked' : '';
   row.innerHTML = '<input type="checkbox"'+ck+' data-dept="'+d+'">'+
-                  '<input type="color" class="swatch dept-color" title="Change colour">'+
+                  '<span class="swatch dept-sw" tabindex="0" role="button" aria-label="Change colour"></span>'+
                   '<span class="cname">'+escapeHtml(d)+'</span>'+
-                  '<span class="ccount">'+deptCounts[d]+'</span>';
+                  '<span class="ccount">'+deptCounts[d]+'</span>'+
+                  '<input type="color" class="dept-color" tabindex="-1" aria-hidden="true">';
+  const sw = row.querySelector('.dept-sw');
   const cp = row.querySelector('.dept-color');
+  sw.style.background = DEPARTMENTS[d].color;
   cp.value = toHexColor(DEPARTMENTS[d].color);
   row.querySelector('input[type=checkbox]').addEventListener('change', function(ev){
     if(ev.target.checked) activeDepts.add(d); else activeDepts.delete(d);
     applyFilters();
   });
+  sw.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); cp.click(); });
+  sw.addEventListener('keydown', function(ev){
+    if(ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); cp.click(); }
+  });
+  cp.addEventListener('input', function(ev){ sw.style.background = ev.target.value; });
   cp.addEventListener('change', function(ev){
     const hex = ev.target.value;
     DEPARTMENTS[d].color = hex;
     SPACES.forEach(function(s){ if(s.dept === d){ s.color = hex; } });
+    sw.style.background = hex;
     applyMeshColours();
     updateSelectionCard();
     if(window.updateDashboard) window.updateDashboard();
