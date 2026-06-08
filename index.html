@@ -10,19 +10,35 @@
 <script src="three.min.js"></script>
 <style>
   :root{
+    /* surfaces */
     --bg:#E5E6E8;
     --panel:#ffffff;
     --panel-2:#f6f8fb;
+    --surf-elev:#fafbfc;
     --line:#e1e6ec;
     --line-strong:#cdd5df;
+    /* ink */
     --ink:#1b242f;
     --ink-soft:#5b6675;
     --ink-faint:#8a94a3;
+    /* accents and chrome that stay the same in both themes */
     --accent:#2f7fd1;
     --accent-ink:#14385f;
     --titlebar:#1c2530;
     --titlebar-ink:#c8d2de;
     --titlebar-faint:#74808f;
+    --btn-active-bg:#1c2530;       /* active state on .seg button.on */
+    /* 3D viewport background gradient + on-canvas label chip */
+    --canvas-glow:#fbfcfe;
+    --canvas-top:#f3f6fa;
+    --canvas-bot:#dfe5ec;
+    --lbl-bg:rgba(255,255,255,.82);
+    --lbl-text:#26313d;
+    --lbl-shadow:rgba(20,30,45,.12);
+    /* subtle hover wash used in legends, table rows etc. */
+    --hover-tint:rgba(0,0,0,.04);
+    --hover-tint-strong:rgba(0,0,0,.06);
+    /* category palette (stays the same in both themes -- encodes data) */
     --office:#4C72B0;
     --meeting:#55A868;
     --circulation:#C9A33B;
@@ -32,6 +48,26 @@
     --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --rail-l:268px;
     --rail-r:296px;
+  }
+  :root.dark{
+    --bg:#0f141b;
+    --panel:#1a2029;
+    --panel-2:#212833;
+    --surf-elev:#171d26;
+    --line:#2a3340;
+    --line-strong:#3d4856;
+    --ink:#e8edf3;
+    --ink-soft:#a3afbd;
+    --ink-faint:#6b7785;
+    --btn-active-bg:#2f7fd1;       /* active state stands out on dark */
+    --canvas-glow:#1e2632;
+    --canvas-top:#161d27;
+    --canvas-bot:#0c1118;
+    --lbl-bg:rgba(18,24,33,.85);
+    --lbl-text:#c8d2dc;
+    --lbl-shadow:rgba(0,0,0,.45);
+    --hover-tint:rgba(255,255,255,.05);
+    --hover-tint-strong:rgba(255,255,255,.08);
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;}
@@ -55,6 +91,11 @@
     font-size: 11px; color: #94989e;
     letter-spacing: .14em; text-transform: uppercase; font-weight: 500;
     animation: ls-rise .85s cubic-bezier(.22,.61,.36,1) .15s both;
+  }
+  .ls-wheel{
+    width:30px; height:30px; display:block;
+    margin-top:4px;
+    animation: ls-rise .85s cubic-bezier(.22,.61,.36,1) .3s both;
   }
   @keyframes ls-rise{
     from { opacity:0; transform:translateY(8px); }
@@ -83,6 +124,7 @@
   /* ---- title bar ---- */
   #titlebar{
     height:38px;
+    position:relative;
     background:var(--titlebar);
     color:var(--titlebar-ink);
     display:flex;align-items:center;justify-content:space-between;
@@ -93,7 +135,28 @@
   .tb-left{display:flex;align-items:center;gap:10px;font-size:12.5px;letter-spacing:.02em;font-weight:600;}
   .tb-dot{width:9px;height:9px;border-radius:2px;background:var(--accent);box-shadow:0 0 0 3px rgba(47,127,209,.18);}
   .tb-sub{color:var(--titlebar-faint);font-weight:400;letter-spacing:.04em;text-transform:uppercase;font-size:10px;}
-  .tb-right{display:flex;gap:6px;}
+  .tb-right{display:flex;align-items:stretch;height:100%;}
+  .tb-logo{
+    display:block;height:20px;width:auto;
+    position:absolute;top:50%;transform:translateY(-50%);
+    left:calc(100% - var(--rail-r));
+  }
+  /* custom window controls (minimise / maximise-restore / close) */
+  .winctl-btn{
+    width:42px; height:100%;
+    background:transparent; border:0; padding:0; margin:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    color:var(--titlebar-faint); cursor:pointer;
+    transition: background .12s, color .12s;
+  }
+  .winctl-btn:hover{ background:rgba(255,255,255,.10); color:var(--titlebar-ink); }
+  .winctl-btn.winctl-close:hover{ background:#c0392b; color:#fff; }
+  .winctl-btn .ico{ width:10px; height:10px; display:block; }
+  /* maximise <-> restore icon swap. The host posts state messages which
+     toggle the .win-maximised class on <body>. */
+  .winctl-btn .ico-restore{ display:none; }
+  body.win-maximised .winctl-btn#winctl-max .ico-max{ display:none; }
+  body.win-maximised .winctl-btn#winctl-max .ico-restore{ display:block; }
   .win{
     width:26px;height:22px;border:none;border-radius:4px;background:transparent;
     color:var(--titlebar-faint);font-size:13px;line-height:1;
@@ -111,9 +174,31 @@
     background:var(--panel);
     overflow-y:auto;
     min-height:0;
+    scrollbar-gutter:stable;
   }
   #left{border-right:1px solid var(--line);}
   #right{border-left:1px solid var(--line);}
+  /* Dashboard open: drop the right rail and let the centre fill its width. */
+  #main.dash-wide{grid-template-columns:var(--rail-l) 1fr;}
+  #main.dash-wide #right{display:none;}
+
+  /* left rail is a flex column so the cog footer pins to the bottom */
+  #left{display:flex;flex-direction:column;overflow:hidden;}
+  #left-scroll{flex:1 1 auto;overflow-y:auto;scrollbar-gutter:stable;min-height:0;}
+  #left-foot{flex:0 0 auto;border-top:1px solid var(--line);background:var(--panel);padding:8px 12px;}
+  #cog-btn{display:flex;align-items:center;gap:8px;width:100%;cursor:pointer;
+           background:none;border:none;padding:5px 4px;color:var(--ink-soft);
+           font:inherit;font-size:12px;border-radius:6px;}
+  #cog-btn:hover{background:rgba(20,30,45,.06);color:var(--ink);}
+  #cog-btn svg{flex:0 0 auto;}
+  #cog-pop{
+    position:fixed;left:10px;bottom:46px;width:calc(var(--rail-l) - 20px);
+    display:none;z-index:60;background:var(--panel);
+    border:1px solid var(--line-strong);border-radius:10px;
+    box-shadow:0 10px 30px rgba(20,30,45,.20);padding:8px 12px 12px;
+  }
+  #cog-pop.open{display:block;}
+  #cog-pop .display-sub:first-child{padding-top:2px;}
 
   .sec{padding:16px 16px 18px;border-bottom:1px solid var(--line);}
   .sec:last-child{border-bottom:none;}
@@ -141,7 +226,7 @@
   .crow input{
     appearance:none;-webkit-appearance:none;
     width:15px;height:15px;border:1.5px solid var(--line-strong);border-radius:4px;
-    background:#fff;display:grid;place-content:center;flex:0 0 auto;cursor:pointer;
+    background:var(--panel);display:grid;place-content:center;flex:0 0 auto;cursor:pointer;
     transition:background .12s,border-color .12s;
   }
   .crow input:checked{background:var(--accent);border-color:var(--accent);}
@@ -161,26 +246,193 @@
   .toggle input:checked + .track .thumb{transform:translateX(17px);}
   .lblsel-row{display:flex;align-items:center;justify-content:space-between;padding:10px 6px 2px;gap:10px;}
   .lblsel{flex:1;max-width:152px;font-family:var(--font-ui);font-size:12.5px;color:var(--ink);
-    background:#fff;border:1px solid var(--line-strong);border-radius:6px;padding:5px 7px;}
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:6px;padding:5px 7px;}
   .lblsel:focus{outline:none;border-color:var(--accent);}
 
   /* ---- viewport ---- */
-  #viewport{position:relative;min-width:0;min-height:0;overflow:hidden;background:#dfe5ec;flex:1 1 0;}
+
+  /* ============================================================ Dashboard
+     Slide-down overlay covering the 3D viewer. The panel slides between
+     translateY(-100%) and translateY(0); a small handle tab sits at the
+     panel's bottom edge (top:100% relative to the panel) so it travels
+     with the panel and is visible at the viewport's top edge when closed
+     and at the panel's bottom edge when open. */
+  #dashboard{
+    position:absolute; top:0; left:0; right:0;
+    height:calc(100% - 26px);                       /* leave room for the tab */
+    background:var(--surf-elev);
+    border-bottom:1px solid var(--line-strong);
+    box-shadow:0 4px 16px rgba(0,0,0,.05);
+    transform:translateY(-100%);
+    transition:transform 380ms cubic-bezier(.22,.61,.36,1);
+    z-index:20;
+    display:flex; flex-direction:column;
+  }
+  #dashboard.open{transform:translateY(0);}
+  .dash-tab{
+    position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    height:26px; padding:0 14px;
+    background:var(--surf-elev); border:1px solid var(--line-strong); border-top:0;
+    border-radius:0 0 8px 8px;
+    box-shadow:0 2px 6px rgba(0,0,0,.04);
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--font-ui); font-size:11px; font-weight:600;
+    text-transform:uppercase; letter-spacing:.08em;
+    color:var(--ink-soft);
+    user-select:none; cursor:pointer; white-space:nowrap;
+    z-index:21;
+  }
+  .dash-tab:hover{color:var(--ink); border-color:var(--ink-faint);}
+  .dash-tab .dash-chevron{font-size:8px; color:var(--ink-faint); margin-left:2px;}
+  .dash-alpha{
+    font-size:8.5px; font-weight:700;
+    padding:1px 5px;
+    background:var(--accent); color:#fff;
+    border-radius:3px; letter-spacing:.1em;
+  }
+  .dash-header{
+    flex:0 0 auto;
+    padding:16px 24px 12px;
+    border-bottom:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel);
+  }
+  .dash-title{
+    font-size:14px; font-weight:600; color:var(--ink);
+    display:flex; align-items:center; gap:8px;
+  }
+  .dash-close{
+    background:transparent; border:0; cursor:pointer;
+    font-size:18px; color:var(--ink-faint); line-height:1;
+    padding:4px 10px; border-radius:4px;
+  }
+  .dash-close:hover{color:var(--ink); background:var(--hover-tint);}
+  .dash-grid{
+    flex:1; overflow:auto;
+    padding:18px 24px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:1fr 1fr;
+    gap:16px;
+  }
+  .dash-card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:14px 16px;
+    display:flex; flex-direction:column;
+    min-height:0; overflow:hidden;
+  }
+  .dash-card-head{
+    font-size:10.5px; color:var(--ink-faint);
+    text-transform:uppercase; letter-spacing:.08em; font-weight:600;
+    margin-bottom:10px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .dash-card-hint{
+    font-size:9px; font-weight:400;
+    color:var(--ink-faint); text-transform:none; letter-spacing:0;
+    opacity:.75;
+  }
+  .dash-card-body{flex:1; overflow:auto; min-height:0;}
+  .dash-headline{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:18px;
+    padding:8px 0;
+  }
+  .dash-num{display:flex; flex-direction:column; gap:4px;}
+  .dash-num-v{
+    font-size:26px; font-weight:700; color:var(--ink);
+    font-family:var(--font-mono);
+  }
+  .dash-num-l{
+    font-size:10px; color:var(--ink-faint);
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+  .dash-empty{
+    font-size:12px; color:var(--ink-faint);
+    padding:20px 8px; text-align:center;
+  }
+  /* pie */
+  .dash-pie{display:block; margin:0 auto 8px; max-width:150px; max-height:150px;}
+  .dash-pie-slice{transition:opacity .15s;}
+  .dash-pie-slice.clickable{cursor:pointer;}
+  .dash-pie-slice.clickable:hover{opacity:.78;}
+  .dash-legend{padding:4px 0;}
+  .dash-leg-row{
+    display:grid;
+    grid-template-columns:12px 1fr auto auto;
+    gap:8px; align-items:center;
+    padding:4px 6px;
+    border-radius:3px;
+    font-size:11px;
+  }
+  .dash-leg-row.clickable{cursor:pointer;}
+  .dash-leg-row.clickable:hover{background:var(--hover-tint);}
+  .dash-leg-sw{width:10px; height:10px; border-radius:2px;}
+  .dash-leg-n{color:var(--ink); font-weight:500;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .dash-leg-v{color:var(--ink-faint); font-family:var(--font-mono); font-size:10px;}
+  .dash-leg-p{color:var(--ink); font-weight:700; font-family:var(--font-mono); font-size:10.5px;
+    min-width:32px; text-align:right;}
+  /* bars */
+  .dash-bar{
+    display:grid;
+    grid-template-columns:minmax(70px, auto) 1fr auto auto;
+    gap:10px; align-items:center;
+    padding:5px 6px;
+    border-radius:3px;
+    font-size:11.5px;
+  }
+  .dash-bar.clickable{cursor:pointer;}
+  .dash-bar.clickable:hover{background:var(--hover-tint);}
+  .dash-bar-l{color:var(--ink); font-weight:500;}
+  .dash-bar-track{background:var(--hover-tint-strong); height:8px; border-radius:3px;}
+  .dash-bar-fill{height:100%; border-radius:3px; transition:width .25s ease-out;}
+  .dash-bar-v{color:var(--ink-faint); font-family:var(--font-mono); font-size:10px;
+    min-width:60px; text-align:right;}
+  .dash-bar-p{color:var(--ink); font-weight:700; font-family:var(--font-mono); font-size:10.5px;
+    min-width:30px; text-align:right;}
+  #viewport{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--canvas-bot);flex:1 1 0;}
   #canvas-wrap{
     position:absolute;inset:0;
     background:
-      radial-gradient(120% 90% at 30% 0%, #fbfcfe 0%, rgba(251,252,254,0) 55%),
-      linear-gradient(180deg,#f3f6fa 0%,#dfe5ec 100%);
+      radial-gradient(120% 90% at 30% 0%, var(--canvas-glow) 0%, transparent 55%),
+      linear-gradient(180deg, var(--canvas-top) 0%, var(--canvas-bot) 100%);
   }
   #c{position:absolute;inset:0;width:100%;height:100%;display:block;}
   #labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;}
   .lbl{
     position:absolute;transform:translate(-50%,-130%);
-    font-size:10.5px;font-weight:600;letter-spacing:.01em;color:#26313d;
-    background:rgba(255,255,255,.82);border:1px solid var(--line);
+    font-size:10.5px;font-weight:600;letter-spacing:.01em;color:var(--lbl-text);
+    background:var(--lbl-bg);border:1px solid var(--line);
     padding:1px 6px;border-radius:5px;white-space:nowrap;
-    box-shadow:0 1px 3px rgba(20,30,45,.12);
+    box-shadow:0 1px 3px var(--lbl-shadow);
   }
+  /* level reference plane tags */
+  .lvl-tag{
+    position:absolute;transform:translate(-50%,-50%);
+    font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--accent-ink);background:rgba(47,127,209,.12);
+    border:1px solid rgba(47,127,209,.45);
+    padding:1px 7px;border-radius:5px;white-space:nowrap;pointer-events:none;
+  }
+  /* draggable "label shows" rows */
+  .lbl-grip{flex:0 0 auto;color:var(--ink-faint);font-size:11px;line-height:1;
+            cursor:grab;user-select:none;letter-spacing:1px;}
+  .lbl-grip:active{cursor:grabbing;}
+  .lbl-main{display:flex;align-items:center;gap:9px;flex:1;min-width:0;margin:0;cursor:pointer;}
+  .lbl-row.dragging{opacity:.45;}
+  /* per-scheme colour: the swatch itself is the picker */
+  .crow .dept-color{
+    flex:0 0 auto;width:13px;height:13px;padding:0;cursor:pointer;
+    border:1px solid var(--line-strong);border-radius:3px;background:none;
+    -webkit-appearance:none;appearance:none;
+  }
+  .crow .dept-color::-webkit-color-swatch-wrapper{padding:0;}
+  .crow .dept-color::-webkit-color-swatch{border:none;border-radius:2px;}
+  .crow .dept-color::-moz-color-swatch{border:none;border-radius:2px;}
 
   #vp-tools{
     position:absolute;top:12px;right:12px;display:flex;gap:8px;align-items:center;
@@ -191,13 +443,19 @@
     font-size:12px;font-weight:600;letter-spacing:.03em;padding:7px 13px;
   }
   .seg button + button{border-left:1px solid var(--line);}
-  .seg button.on{background:var(--titlebar);color:#fff;}
+  .seg button.on{background:var(--btn-active-bg);color:#fff;}
   .vbtn{
     border:1px solid var(--line-strong);background:var(--panel);color:var(--ink-soft);
     font-size:12px;font-weight:600;letter-spacing:.03em;padding:7px 12px;border-radius:8px;
     box-shadow:0 1px 3px rgba(20,30,45,.10);
   }
   .vbtn:hover{color:var(--ink);border-color:var(--ink-faint);}
+  /* theme toggle: square icon button, shows moon in light mode / sun in dark */
+  .vbtn-theme{padding:6px 9px;display:inline-flex;align-items:center;justify-content:center;}
+  .vbtn-theme .ico{display:none;}
+  .vbtn-theme .ico-moon{display:block;}
+  :root.dark .vbtn-theme .ico-moon{display:none;}
+  :root.dark .vbtn-theme .ico-sun{display:block;}
 
   #compass{
     position:absolute;left:14px;top:14px;width:34px;height:34px;border-radius:50%;
@@ -222,6 +480,7 @@
   .metric{flex:1;}
   .metric .mv{font-family:var(--font-mono);font-size:25px;font-weight:600;color:var(--ink);line-height:1;letter-spacing:-.01em;}
   .metric .mv small{font-size:12px;color:var(--ink-faint);font-weight:500;margin-left:3px;}
+  .metric .mv .mv-sub{font-family:var(--font-mono);font-size:12px;font-weight:500;color:var(--ink-faint);letter-spacing:0;margin-top:3px;}
   .metric .mk{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:6px;}
 
   .bars{display:flex;flex-direction:column;gap:9px;}
@@ -352,7 +611,7 @@
   .vbtn-help{width:30px;text-align:center;font-weight:600;}
   #nav-help-pop{
     position:absolute;top:calc(100% + 6px);right:0;z-index:50;
-    background:#fff;border:1px solid var(--line-strong);border-radius:6px;
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:6px;
     box-shadow:0 6px 22px rgba(15,23,42,.18);
     padding:10px 12px;min-width:260px;display:none;
     font-family:var(--font-ui);
@@ -380,7 +639,7 @@
     padding:3px 9px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;
     font-family:var(--font-ui);cursor:pointer;}
   .bd-mode-btn.on{background:var(--accent);color:#fff;}
-  .bd-mode-btn:not(.on):hover{background:rgba(0,0,0,.04);color:var(--ink);}
+  .bd-mode-btn:not(.on):hover{background:var(--hover-tint);color:var(--ink);}
 
   /* pie chart */
   .pie{padding:4px;}
@@ -398,13 +657,31 @@
   /* slider + colour pickers in the Display section */
   .display-sub{font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;
     letter-spacing:.06em;font-weight:600;padding:10px 6px 4px;}
-  .ctrl-row{display:flex;align-items:center;gap:8px;padding:5px 6px;}
-  .ctrl-row .slabel{flex:1;font-size:12px;color:var(--ink-soft);}
-  .ctrl-row input[type=range]{flex:0 0 88px;}
-  .ctrl-row .val{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint);
-    min-width:30px;text-align:right;}
-  .ctrl-row input[type=color]{width:34px;height:22px;border:1px solid var(--line-strong);
-    border-radius:4px;cursor:pointer;background:transparent;padding:0;}
+  .ctrl-row{
+    display:grid;
+    grid-template-columns:1fr 90px 40px;
+    gap:8px;
+    align-items:center;
+    padding:5px 6px;
+  }
+  .ctrl-row .slabel{
+    font-size:12px;color:var(--ink-soft);
+    white-space:nowrap;
+    text-align:left;
+  }
+  .ctrl-row input[type=range]{width:100%;margin:0;min-width:0;}
+  .ctrl-row .val{
+    font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint);
+    text-align:right;
+    grid-column:3;
+  }
+  .ctrl-row input[type=color]{
+    grid-column:3;
+    justify-self:end;
+    width:36px;height:22px;
+    border:1px solid var(--line-strong);border-radius:4px;
+    cursor:pointer;background:transparent;padding:0;
+  }
   .atable tbody tr{user-select:none;}
 
   /* per-column filter button (Excel-style dropdown trigger) */
@@ -424,7 +701,7 @@
   .fp-head{padding:8px 8px 6px;border-bottom:1px solid var(--line);}
   #fp-search{width:100%;font-size:11.5px;padding:5px 8px;
     border:1px solid var(--line);border-radius:4px;
-    font-family:var(--font-ui);box-sizing:border-box;background:#fff;color:var(--ink);}
+    font-family:var(--font-ui);box-sizing:border-box;background:var(--panel);color:var(--ink);}
   #fp-search:focus{outline:none;border-color:var(--accent);}
   #fp-search::placeholder{color:var(--ink-faint);}
   .fp-master{padding:5px 12px;border-bottom:1px solid var(--line);}
@@ -459,7 +736,7 @@
   .atable th:hover .th-hide{opacity:1;}
   .atable .th-hide:hover{background:rgba(0,0,0,.06);color:var(--ink);}
   .atable .th-filter{width:100%;margin-top:5px;font-size:11px;border:1px solid var(--line);
-    border-radius:3px;padding:2px 6px;font-family:var(--font-ui);background:#fff;
+    border-radius:3px;padding:2px 6px;font-family:var(--font-ui);background:var(--panel);
     color:var(--ink);box-sizing:border-box;text-transform:none;letter-spacing:0;font-weight:400;}
   .atable .th-filter:focus{outline:none;border-color:var(--accent);}
   .atable .th-filter::placeholder{color:var(--ink-faint);}
@@ -472,15 +749,29 @@
 <div id="loading-screen" aria-hidden="true">
   <img class="ls-logo" alt="Assael" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAFiAfQDASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAgMGAQj/xAA7EAEAAgECAQgFCgcBAQEAAAAAAQIDBBEFEhMhIjFBUXE0YXKBsRUyQlJTkZKiweEUIzNiZKHRQ/CC/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAEC/8QAFhEBAQEAAAAAAAAAAAAAAAAAABEB/9oADAMBAAIRAxEAPwD6jAaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZ4cV82SMeOvKtPckfJ+r+y/NCCIJfyfq/svzQ159JnwU5eSm1d9t94kGgBQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABlStr3rSsb2tO0AxEv5P1f2X5oPk/V/ZfmhBEGebFfDk5GSNreG4owAAAAB7WJtaKxG8zO0AtOB4dq3zzHb1a/qs2GnxxhwUxx9GNmbINWrxc9p74++Y6PNtAcxMTE7T2vEviuHmtXaYjq360fqiKACgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3aP0vD7cfFpbtH6Xh9uPiDogGRR8Y9Ot5QHGPTreUCiGAoAAJ3B8POarlzHVxxv7+5BX3CsPNaSszHWv1p/RNEpjktFMdrz2ViZlkh8Yy8jSTWJ6bzt7kEjTZOdwUyfWjefNsQOCZOVp7Y5nppPR5T/APSnghcYxc5peXEdOOd/d3qR09qxas1tG8TG0ubz45xZr457azsuDABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbtH6Xh9uPi0t2j9Lw+3HxB0QDIo+MenW8oDjHp1vKBRDAUAAbtHi5/U0x90z0+TolbwPDtS+eY6Z6seSyTQUnGMvOarkRPRSNvf3rjPkjFhvknsrG7m7TNrTaZ3mZ3kwSuFZea1lYmei/Vn9F65iJmJiY6Jh0emyRmwUyR9KOnzNGxU8cw7ZKZojot0T5rZo12LntLekR07b180HPANAAAAA24cGbNP8rHNvX3JvDtBGSIzZ46v0a+K1rWKxFaxERHZEQlFRj4VnmN73pX1drP5Jnb+vG/s/utRKKi/Cs0R1clJ894Rs2j1OKN7YpmPGOl0AtHLiy45WtcmO0ViJmJ3mI7VaACRodLfU5No6tI+dZRppW17RWlZtM90Ql4uG6m/TaK0j1z/xb4MGLBTk46xHjPfLYlFVXhNu/PEeVXluE3+jmrPnGy2EoosvDtVTpikXj+2UW1bVtybVms+Exs6dF4pWttFkmaxMxHRO3Z0rRQgKANulw2z56447+2fCAZYdJqM1YtjxzNZ756ISKcKzz869K+/dcUrWlIpWNqxG0Q9SirjhPjn+6n7k8I8NR+T91oJRTZOF56xvS1L+rfaUPLiyYrbZKWrPrh0rHJSmSk0vWLVnulaOZEviOjnTX5Vd5x27J8PUiAAKALHQcO5yIyZ94r3V75QQcWLJlnbHS1p9UJePheotG95pT1TO8rjHSmOsVpWK1juhkUVdeEz9LP8AdX93luE226ueJ867LUSiizcP1OON4pF4/tndFmJidpjaXTtGq0mHUR142t3WjtWjnhu1enyafJyLx0d1u6WlQbtH6Xh9uPi0t2j9Lw+3HxB0QDIo+MenW8oDjHp1vKBRDAUHtaza0VrG8zO0PE7g2HnNTzkx0Y4396C3wY4xYaY47KxszBBXccy7Y6YYnptO8+SoSNfl57VXvE9ETtHlCOoLbgeXel8Mz0xPKjyVKRw/LzOrpaZ6JnafKQdAAgoOJYeZ1d4iOrbrR70Zc8aw8rBGWI6aT0+UqZQAUEnh2Dn9VFZ+bXrWRlrwKscjLfv3iEFmBadomfBBB4hr4wW5vFEWyd8z2QrL6vU3nec948p2+DVe03vN7TvMzvLFRvrq9TXsz5PfO6Vp+KZKzEZqxePGOiVcAn8XzY88Yb47RMbT7uxAAHtYm1orEbzM7Q6LS4a4MFccd3bPjKl4ZWLa7FE907/dG6/NBp1mpppsXLt0zPzY8W5ScZvNtZye6tYhBhm1+pyTO2TkR4V6GuNTqInfn8n4paRRMw8R1NPnTGSP7oSs+txajQ5ax1b7fNnz7lSAAKCw0Go0+kwza298tu2IjsjwV4gsMvFc1v6dK0j19MtFtdqrT05rR5dCMA3xrNVH/vf70jBxPNWYjLEZK+W0oADpcGWmbHGTHO8T/pmpuC5ppqJxTPVvH+4XKDXqcUZsF8c/Sjo9UuctExMxMbTHRLp3PcQrydblj+7f7+lcGgGeDHbLmrjr22nZRO4RpOXbn8kdWPmxPfPit3mOlaUrSsbRWNoeshMxETMztEdsqnWcTtMzTT9FfrTHTLPjWomNtPWe3pt/xVKNl82W872yXmfXZli1OoxzvTLaPVM7w0gLvQa+ueebyRFcndt2SmuYraa2i1Z2mJ3iXRaTLz2npk75jp8wNVhrqMNsdu/snwlz2WlseS2O8bWrO0umVPHMO2SmaPpdE+ZgrW7R+l4fbj4tLdo/S8Ptx8VHRAMij4x6dbygOMenW8oFEMBQX3C8PM6Su8da3WlUaLDz+ppj7t97eToU0EfiGXmdJe0T1p6secpCo43l5WWuGJ6KxvPnKCuAaAAHQ6HLz2lpffp22nzhvVXA8u1r4Z7+tH6rVkY5aRkx2pbstG0ubyUnHktS3bWdpdMp+NYeRnjLEdF46fOFwV4CgteBXjbLTv6JVTdo886fUVyR2dlo8YQdEMcd65KRek71nslkg5/W6a2nzTWYnkTPVnxhHdNkpTJSaXrFqz3Sr9Rwqs7zgvyf7bdn3rRUjdn02fB/UxzEePbDSoAAkcOvFNbitPjt9/Q6BzETtO8L7h+prqMMbz/Mr86P1TRJVfGdNabRqKRvG21tu71rQQcuLzU8OwZZm1P5dp8Oz7ldqNBqMXTyeXXxr0qIgCgAAAAJWDQ6nLtMU5NZ77dCXj4TH/pmmfVWEFULqOF6aO2ck+97PDNNP1495RVaGdtZhn++IdEg4+GYaZK3rfJvWYnpmE5AUPFfT8vu+EL5Q8V9Py+74QuCKsOB4+Vnvkn6NdvfKvXHA67aa9u+b/pBosAEHN6nJzuoyZN+207eTW6XmcX2VPwwczi+yp+GFo5odLzOL7Kn4YOZxfZU/DBRzS54HbfS2r4X/RM5nF9lT8MMq1rWNq1ivlAPUXi1OXobz312mEpq1kb6TNH9k/BBzjdo/S8Ptx8Wlu0fpeH24+LQ6IBkUfGPTreUBxj063lAohgypWb3ilY3mZ2hRa8Ew7Y7Zpjpt0R5LFhhxxixVx17KxszZBGy6HT5Mlr3rabWneetKSAifJul+pb8UnybpfqW/FKWAifJul+pb8UnybpfqW/FKWAjYdFp8WSMlKzFo7OskgAjcSw89pLxEdavWj3JIDlxv12LmdVem3RvvHk0NAADfpNVl01upO9Z7az2StdPxHT5dotPN28Ldn3qMQdRExMbxO8Dm8OfNhnfHktX1dyz0fE63mKZ4is/WjsILGYiY2mN4QdXw3FkibYdsd/DulOEHNZcd8WSaZKzW0dsMF3xbTxl085Ijr4438471IoMsWS+K8Xx2mto74Yii203FKTEVz15M/WjsWGPJjyV5WO9bR6pcyypa1LcqlprPjE7JB0wp9LxPLSYrmjl18e9a4ctM2OL47cqsoNep0mDURM2rtb60dqm1mkyaa3W6az2Wh0DDNjrlxWx3jeJgHNDPNjnFltjt21nZg0MsWO+XJFKRvaeyF3otDjwRFrRF8njPd5NfBsEUw89aOtfs9UJ6aAxyXrjpN7ztWI3mVNq+IZctprjmceP1dsoLm+SlPn3rXznZhOp08dufF+KHOT09osHSVz4LTEVzY5meyItDY5zSelYfbr8XRoCh4r6fl93whfKHivp+X3fCFwRV3wXb+C//UqRc8DnfS3jwv8ApBonlp2iZiNwQVfyv/j/AJ/2Plf/AB/z/srs1ObzXp9W0wwWC0+V/wDH/P8AsfK/+P8An/ZVhBafK/8Aj/n/AGPlf/H/AD/sqwgtPlf/AB/z/sxycV5eO1OY25UTHz/2VoQG7R+l4fbj4tLdo/S8Ptx8VHRAMij4x6dbygOMenW8oFENP4Nh5eonJMdFI/2gL/huHmdJWJjrW60miSDDUZIxYb5J+jG6Cn4vmnJqppE9Wkbe/vQ958ZLTNrTaZ3mZ3l4o93nxk3nxl4KPd58ZN58ZeAPd58ZT+C5uTntimei8dHnCvZ4rzjy1yV7azug6UeUtF6Res7xaN4eoK3jmHfHTNEdNerPl/8AfFUulz44y4b457LRs5u1Zraa2jaYnaVweA92nk8radt9t1HgAAALrg2Wcmmmlp3mk7R5JyBwTHNdPbJP056PKE9kJiJjaexzF45N7V8J2dPMxETM9ER2uZvPKva3jO64MR7WJtO1YmZ9TxQAATeD5Zpqox79W8bTHrQkzhGOb6yttuikbygvAEFLxqvJ1m/1qxP6IKdxq0W1m0fRrET8f1QVHTYqxTFWkdlYiGTysxasWjsmN3qCu45kmuKmOJ6LTMz7lQt+O0mcWPJEfNmYn3qhcABRt0npWH26/F0bnNJ6Vh9uvxdGmgoeK+n5fd8IXyh4r6fk93wgwRVjwPJtmvjnstG8ecK5swZbYc1cle2s/eDpBjjvXJjres7xaN4ZIKXjOHkannIjq5I/2guj1eCuowzjt0d8T4SoM+HJgyTTJXafiuDWAoAAAAN2j9Lw+3HxaW7R+l4fbj4g6IBkUfGPTreUBxj063lAo1aHDz+qpSY6N97eToVdwTDycVs0x02naPJYmgreOZdsdMMT87rT5LJz2uy89qr3iejfaPIwaAFAAAAAAF3wbLy9LyJnppO3uTVHwnLzerisz0X6s/ovGdBS8Yw83quXEdXJG/v710icVw87pLTEdanWj9QUS34LWttNkraImJt0xPkqFpwXNipjvS961tNt4iZ23UbdRwvFfpxWnHPh2whZOHaqk9FYvHjWV4JRz8aPVTO3MX+5K0vC7zaLaiYrX6sT0ythaPK1itYrWIiIjaIeiNrNbi09ZjeL5O6sT8UGvi2ojFp5xxPXydHlHepGefLfNlnJed5lgol8J9Px+/4Ss9TocGbeeTyLT31VXDclMespe9orWN+n3L6tq3ryq2i0eMSaKfNwvPXpx2rkj7paJ0eqidpwX9zoAoo8PDtTeetWMdfGZW+l0+PT4+RT3zPbLaIDDNkrixWyXnaKxuZs2PDTlZLxWPipNfrLam20RyccdkfrINGbJbLltkt22ndgDQveFZoy6Wtd+tTqz+iW53S576fLF6e+PGF7ptRi1FOVjt098T2wyM8tK5Mc0vG9ZjaVRqeG5qWmcX8yv+4XIDnZ02o325jL+GWzHoNVef6U1jxt0L5H1+prpsPK7bz0VhaKycFdNq8FJycvJy6zMR2R0rtzeO8zqK5LzvPKiZn3ukNBRcW9Pye74QvVHxiNtdafGIkwQwFFjwrWRjnmMs9SZ6sz3St3Lp2h4hfDEY8sTfHHZ4wgumGbDjzU5GSsWj4McGow543x3ifV3w2oKvPwqd98OSNvC3/UW3D9XWf6W/ri0L4Wjn40Wq325mzOnDtVbtpFfO0L0KKvHwqIjlZs20R2xX/quzcjnLc3ExTfo3WvGdRyMcYKz1r/ADvVCnAbtH6Xh9uPi0t2j9Lw+3HxUdEAyKPjHp1vKA4x6dbygUaqavUUpFKZZisdkbQy/jtV9tb7oRgEidbqpiYnNbaUcFAAAAAAAAHsTMTExO0x2JH8dqvtrfdCMAk/x2q+2t90PJ1uqmNpzTtPqhHEABRuxanPi/p5bRHhvvH3JNOKaiPnVpb3bIAgs44tbvwR+L9nluLZPo4qR5zurQgk5tdqcsTE5OTE91ehGBQAAZ48mTHO+O9qz6pYAJmPiWqr2zW/tR/xuji1+/DWfKVaILO3FrfRwRHnbdpy8S1N/mzWkeqP+oQDK97XtNr2m0z3zLEFAAB7W1q2i1Zmsx3xLwBMxcS1NIiJmt4/uhvji1u/BE+VlYILK3Fskx1cVY853QdRmyZ8nLyTvPZ5NYAkfxuq+2t/pHFEn+O1X21vuhpzZcma0WyWm0xG27AQAFAAHtZmsxNZmJjvhJxa/VY//WbR4W6UUBYxxbL34qT5bsvladv6Eb+1+ysEFjPFsvdipHnMtWTiOqv2XinswhgMsl7ZLTa9ptae+WIKD2lppaLVnaYneJeAJP8AHar7a33Qfx2q+2t90Iwgzy5L5b8vJblW8RgKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//Z">
   <div class="ls-subtitle">Area &amp; Room Browser</div>
+  <svg class="ls-wheel" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <circle cx="16" cy="16" r="13" fill="none" stroke="rgba(47,127,209,0.18)" stroke-width="2.5"/>
+    <circle cx="16" cy="16" r="13" fill="none" stroke="#2f7fd1" stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-dasharray="81.681"
+            stroke-dashoffset="81.681"
+            transform="rotate(-90 16 16)">
+      <animate attributeName="stroke-dashoffset" from="81.681" to="0" dur="3s" fill="freeze"/>
+    </circle>
+  </svg>
 </div>
 <div id="app">
   <header id="titlebar">
     <div class="tb-left"><span class="tb-dot"></span>Area &amp; Room Browser</div>
+    <div class="tb-right">
+      <img class="tb-logo" alt="Assael" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCABZASwDASIAAhEBAxEB/8QAHQAAAgIDAQEBAAAAAAAAAAAAAAgHCQQFBgMBAv/EAFYQAAEDAwEEBQUJCQwIBwAAAAECAwQABREGBwgSIRMxQVFhFCJxdYEVFjY3UpGhs7QYMkJWcoKSlaIJIyUzQ1dic6Ox0uMkJjhUY6XT8FNVZZTBwuH/xAAYAQADAQEAAAAAAAAAAAAAAAAAAgMBBP/EACERAAICAgMAAwEBAAAAAAAAAAABAhESMQMhQRMiUTJh/9oADAMBAAIRAxEAPwBbKKKK6jnCvqEqWoIQkqUo4AAySa+VLG6jo334bYLcZDXHAtH8IysjIPAR0aTnrysp5doCqxukalbNg1ux7WXGkOe5dvRxJB4VTkAjPYfGtZq3d+2laY05Ov8AdLbD8igt9K+WZaXFBGQCeEcyBnJ8AasJrHuUKNcrdJt01oPRZTK2Xmz1LQoFKh7QTUvkZTBFVNFb7aFpuVo/W9301L4i5b5S2gojHGjOUL9CklKvbWhqpIKKKK0AooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAr3t0R6fcI0GOAXpDqWmwTgcSiAOfpNeFbfRPwzsfrGP9YmsBEp/cw7Wf/Lrb/wC/RUfbSNA6j2f3xmzakYYZlvRkykJaeDg6MqUkHI7coVyqzWkq37vjdtXqFn7RIqcZtspKKSF2oooqpMKefcp0b73tlytQSWuGbf3emGRzEdGUtj2njV4hQpN9nemZWsdcWjTMPiDlwkpaUoDPRo61r9CUhSvZVm9shRbbbYtuhNBmLFZQwy2OpCEgJSPYAKlyPwpBenCbf9oA2c6Jj3pASp965Ro6EnnxI4wt0Y8W0LHgSKkFl1t5lDzK0uNuJCkKSchQPMEGkr36NX+620CDpOM7mPZGON8DtkOgKPpwgI9BUqmB3VNW++zYxaVvOccy1g26T35bA4D7Wyjn35pXGo2Mn3RCu/lo7yW+WjXEVnDU1HkM1QHLpUAqbUT3qRxD0Nilgqyfbpo9Oudlt6sCGwuWpgvwuXMPt+cgDuyRw+hRqtlQKVFKgQQcEHsp4O0JNdnyiiiqCBRRXX7O9mmtdfPqTpmyPSWEK4XJThDbCD3FasDPgMnwrAqzkKKZO2boerXW0KuOqbLFURlSWW3HuHwyQmvK7bo2tGGlLtuo7HMUnmEO9KyVejzVDPprM0NixcaK67X+zXW+hHP9ZrBKiMFQQiUkBxhZPUA4nKcnuJz4VyNaKFFfW0LccS22lS1qICUpGSSeoAVMmht2zaZqWM3LkwothjODKVXJwocI/q0gqB/KCaG0tmpNkNUUzY3QNQ9Bk6ytfS/J8lc4fnz/APFctqzdd2mWZhci3ptl9bSCSiHIKXcfkuBOT4Ak1mSNxZBtFZd3tlxs9xett2gyYE1g4djyGi24g4zzSeY5c6xKYUKKyLXBl3S5Rrbb465EuU6llhpAypa1HCUjxJNTrY91HaPNb6S4TLHa/wDhuyFOL/YSU/tVjaWzUmyAqKaGLue3dTRMnXEFpzsS3AWsfOVj+6tHqXdN15AjuP2a62e8cP3rIWph1fo4xwfOoVmaNxYvVFbHUlivGm7w9aL7bpFunsH98ZfRwqHcR3g9hHI9la6mFCiigAk4AyTQAUVLOgd3raZq2OzNTamrPBeHEiRcnOiyO8NgFeD2HhAPfUixtz6+KZUZOtbc27jzUtw1rST6SoY+alckhsWLDRU/6m3UdodujF+0TbReiD/EtPFl0+jpAE/tVCOo7FeNOXZ21X22yrdOa+/ZkNlKsdhGesHsI5GtTT0Y00a6tvon4Z2P1jH+sTWorb6J+Gdj9Yx/rE0Atlo9JVv3fG7avULP2iRTq0lW/d8btq9Qs/aJFR49lZaF2oor9MtuPPIZaQpbi1BKEpGSonkAKuRGi3DNGdPcrvruWzlEZPkEEqH8ooBTqh4hPCn8801eo7tDsNguF7uC+CJAjOSHj28KElRx48uVaDY5pFvQ2zWy6bCUh+PHCpShjzn1+c4c9vnEgeAFRVvx6w9xtnEXS8Z3hlX1/wDfQDzEdohSvEZX0Y8RxVB/aRZfVCbapvMzUWpblfp6uKVcJLkl3HUCtROB4DOB6KnncU1b7ma/uGk5DmGLzG6RgH/x2QVY8MoK/wBEUulbbRt9laY1ZatQwv4+3S25CR2K4VAlJ8CMg+BqrVqiSdOy0iq9N6bR3vO2xXRphro4FzPujEwMAJcJ40jHUAsLAHdirAbPcIt2tMO6QXOkizGESGF/KQtIUk/MRUD78OjvdrZxG1RGa4pVify6QOZjukJV4nCuA+A4qlB0yslaEjoooq5EkTd72dK2lbRI9nfU43a4yDKuDiDhQaSQOFJ71KIT4ZJ7KsOslrt1ktUe1WmExCgxkBDLDKAlCB4D6c9ppYP3PpljybWL/CkyAuGjOOYTh44z4n+4U1D/AEvQr6EoDvCeDi6uLHLPhUJvstBdEK7Yd43Sug7w7Y4EF7UF1jqKZLTLwaaYUOtCnCk5V3gA47SDyrgrZvhxlPpTc9ButNFXnLj3ILUE+CVNpyfaKVW7pmoustNy6Xy4PrEnpc8fScR4uLPPOc5rFqighHNjbbym0/R20XYL0+m7mFSG7nHU9CfAbksjCxlSMnI6vOSSOfXSk0UVqVCt2OPua7JoEHT0faHfIiH7lNyq2IdSCIzQOA4Afw1EHB7E4x1mmF1PfrTpmwyr5fJrcK3xEcbzy8kJGQAMDmSSQABzJNYmzxthnQGnWYuOgRa4yW8D8ENJx9FQnv5ouatmdoXGKvc9N0HlYTn74tq6Mnwzxe0pqP8AUi38o0l+3wLezPcasmiX5kVK8IflTwypae/gCFYz+VW60VvZaQus5EXUdknWAOKCUyEuiSynxWQlKgPQk0ldFVwRLNkp71twg3XblerhbJkebDfZiKafYcC0LHkzfMKHI1FlFFMlSMbtk2br87QOkLpJ17ri8x2n4gLNqgoQXnluEee7wJB4cA8KSrAJKjnzal68b3mk2VqTadK3mYB1KkONsZ+YrpNaKVxTds1Sa0N9at8GzOy0JumiZ8WOT5zkech9QHglSEA/PTA6D1hp7XGn2r5pu4ImRFnhVyKVtLHWhaTzSof/AKMgg1WBTBbi+oZVv2py7AHFGHdYKypvi5dK15yVY7+HjH53hSygqtDRm77GU3gtmdv2j6HkxugQm9RG1PW2SEjjDgBPRk/IX1EdhIPZVdS0qQsoWkpUk4IIwQatdqsja1Dat21PVcFhPCyxeZbbY7kh5WPoo434E16cykFSglIJJOAB207m7HsJgaTtkPVmqoYkakfQHWY7yQU28HmBg/yuOsn73qHUSYF3QdGM6t2vRpM1AXCsjfug4lQ5LcSoBpP6RCvQg0/dHJLwIL05raJrnTWgbCq8aluCYzJJSy2kcTr68Z4UJ7T9A7SBS4XffBkeWJFp0O0IyVecZU8la0+ASjCT+lUS7zmupet9qly/0npLXanlwrehJ8wIQrCljvK1AnPdwjsFRfWxgq7CU34Plse3jdKa9vDVinQntP3V9XDGbeeDrT6uxCXMJ889gIGewknFd7tV2ead2jabctF9jJ6QAmLMQkdNGX8pJ7u9PUfmIrSZdcZeQ8y4ptxtQUhaTgpI5gg9hqyzYtqR/V2yrTuoZR4pMqGkSFfKdQShavapJPtpZxx7RsZXsrv2gaVumidX3DTV4bCZUNzh4wPNdQeaVp/oqBBHp768NE/DOx+sY/1iaZrf8000GtOavZYw6Vrt0lwdShguNA+PJ3/sUsuifhnY/WMf6xNUi7ViNUy0ekq37vjdtXqFn7RIp1aSrfu+N21eoWftEipceyktC7VMW6Ho3317X4cyQ1xwLIny97I5FxJw0n08eFY7kGodp8dzTRnvZ2TN3eS1wTr+55YvIwQyOTI9GMrH9ZVJukTgrZNtV+b1eppOr9sd0Uwh1yDav4Oi4SSCGyeNQx15cK+fdirA6KlGVMq1ZVN5LJ/3d79A0eSyf93e/QNWs0U/yf4J8ZB+5fqh297JU2aXxiXYnzGwoHJZV57Z5+lSfQipiv8Aa4d8sU+zXBvpIk6O5HeT3oWkpOPHBrOoqbdux0Va6vscvTOqbnp+eMSbfKcjuHsUUqI4h4EYI8DWrpkN+zR/ubrW3axjNYYu7PQSSOx9oAAn8pHCB+QaW+rp2rItUyVN2TaWzs21/wCUXPj9xbk2I04pBJaGcodAHXwnOfBSsc8VYBaLlAu9tYudrmMTYUhHGy+wsLQtPeCKqrrrdn20jWmg3+PTN9kRGVK4nIqsOMOHtJbVlOfEAHxpZQvsaMq6HR2ybv8ApHaHLdu7TjtkvjnNcuOgKQ8erLjZwFHl1gpPeTSt7R93vaNo1t2YLcm921vmZVtJcKR15U3jjGB1nBA76mDZxvaw5LzMLXdjEIqISZ9vyptPipo5UB3lJUfCmZs1zt95tUa62qYzMhSmw4y+0riStJ7QaW5R2NSkVWEEEgjBHWKKdnes2LWm/aauGtdOwW4l+gtqky0sjhTNaSMrKh1dIACoKHM4IOcjCTVSMrROSodrdG2u2q+6SgaHvU5uNfba2I8QOqwJbCeSAgnrWkYSU9eACM88TvfbTbb7aJNou8JmbAlILb7DqcpWn/vmD1ggEVVe2tbbiXG1qQtJBSpJwQR1EGpl2e7yW0bSyG4s6Y1qKCnl0dxyp0DwdHnZ/K4vRSSh6h1P9JN2k7pSHHHpugb2loHKhb7iSQPBDoBPgAoHxVS4a60Lq3RE4Q9UWOVb1KOG3FJ4mnPyHE5Sr2HlTwbHdvejtoslu1JDtmvix5sGUoKDvIk9G4OSsAdRCT3A4qTb7aLXfbU/arzAjz4MhPC6w+gKSoeg9vcesHmKzNrZrinoquoqV95nZanZnrRtFtLi7Fc0qegFZJU2UkcbRPbw5BB7lDPPNcTs30pO1vre16Xt54Hpz3CpwjIabAKlrI7eFIJx24xVb6snXdH50Ro3U+tbr7m6Ys8m4vjBWWxhDQPatZwlI8SRU+aV3Q77JZS7qXVUK3KIyWIcdUhQ8ColAB9GRTR7P9HWDQ2m2LDp2EiNGaAK19bj68c3Fq/CUfo6hgACo/277eLDszeFojxDeL+tHGYqXOBEdJHmqcVg9fWEgZI7sgmWbbpFMUtnExt0HS6UESdW3lxeORbZbQPmINdHsr3c7Xs/19B1XA1PNlmKl1Pk70ZICwttSPvgeWOLPV2VBdz3q9p0p5SorVigoPUhqIpWPatRrtN3XbttB1ntYtWmb/LgPwJaXy5wREoX5jK1jBHikVrUq7BONjZ1Wltv+OTWXryX9cqrLarS24fHJrL13L+uVWcewnoY39z+gIRp/VVz6McbsthjjxzwhClY/bpoCMgjvpaNwKXx6K1LByP3m4tu/ptgf/SmUkNB5hxlRUlLiSklJwRkY5HsNLP+jY6IrVu6bG1KKlaPJJOSTc5fP+1o+5z2Nfid/wAzl/8AVpG7hqfWkGfIhP6ovqXo7qmnAbg7yUkkEffd4rw9+Orvxqvn6wd/xVTF/ouS/B6/uc9jX4nf8zl/9WpB0hpyzaS09G0/p+GYdti8fQs9Ktzg4llavOWSo5Uonme2q0/fjq78ar5+sHf8VHvx1d+NV8/WDv8AirHBv0M1+Dtb6EJMrYPcX1I4jDmRn0n5JLgbz8zhHtpINE/DOx+sY/1ia/M/Uuo7hEXEn3+6y4zmONp6Y4tCsHIyknB5gH2V+tE/DOx+sY/1iaeKpCt2y0ekq37vjdtXqFn7RIp1aSrfu+N21eoWftEipceyktEN7LdKv622gWbTDHEBNkpS8tI5oaHnOK9iAo1ZpCjMQ4bMOK0lmOw2lpptIwEJSMADwAFKpuF6MybzruW0OX8HQSR6FOqH7CQfyhTWvOtsMreecS222kqWtRwEgcySewUcjt0ZBUhUt/XWB4rJoaK91ZuM0JPpQ0k/2hx4pNKlxK+Ufnrqdrmq3NbbR73qValFqXJPk6VdaWU+a2P0AnPjmuVqsVSJyds+8SvlH56OJXyj89fKKYwyrXcJdsucW4wn1tSoryH2Vg80rSQpJ9hAqzrQmoYurNG2jUkMp6K4RUP8IOeBRHnI9KVZT7Kq7pytxDV/l+j7po2S9l61veUxUk8+gdPnADuSsEn+sFT5F1Y8H3RJ+8do737bIrzbGWuknRm/LYQAyelaBOB4qTxI/OquarXqrl3jdHe8na5ebWyz0cGQ55bBAGB0LuSAPBKuJH5tZxvw2a9I7opjt0fZxpHaHpPVUTU9sEhbMiOI8ltZQ8xlK88Kh6ByORy6qzNZ7o1/jyHHdJaigzo2coZnhTLoHdxJCkqPj5vop8ldC4urFlpxtwS5XCRpDUdsfWtcGHMaXG4jkJU4lXGkdw8xJx3qPfUcae3Udok2UkXabZrVGCwHFl9TznDnmUpSnBPgVJptdlehLLs60gxp2yha0JUXH5DmOkkOnrWrHoAA7AAPGknJVQ0ItM6laEuIUhaUqQoYUkjII7jVU81Dbcx9tk5bS4oIPeM8qsH3l9o0PQGzqalEhIvVzZXGtzIPnZUMKd8AgHOe/hHbVedHGgmwop29UbtWidXabgXKyqc05dXYbS1rjp447iigElTRIxn+iU+g1D143U9pcSTwQX7JcWSeTjcpTZA8QtIx7CaZTTFcGQVClSIUxmZDfcYkMOJcadbVwqQoHIUCOog1aXp+TJm2G3zJjPQyX4rTrzfyFqSCpPsJIpZ9kG6u/a79GvOvblBltxXEutW6FxLQ6ocwHVLSPNBxlIBz3462mpJyT0PBNC6b+7EZWzGySV48pbvKUN9/Cpl0q+lKai7cPjR3trlyfdQlTkeyuqayOaSXWkkj2Ej2147520aFq7WUXTlmkIkW2x8aXHkHKXZKsBeD2hISEg95V1jFcTu362Y0FtYtt3nOFu2yAqHOUDyS05jzj4JUEKPgmmSeIrf2LGKrL2wS503arqqRcuISjd5KXEqOeDhdUkJHgkAAeAFWZMutvMoeZcQ424kKQtBylQPMEEdYpdt4PdxXrS/v6q0hOiQrnKIMuJJBSy8oDBcSpIJSo4GQQQTzyOeUg0n2PNWhLKlzc+/2g9PfkSvsztbGHuvbV35hYdh2qK2Djp3Z6Sg+OEgq+iug2M6Og7PN5vTGnn9QR7reUoleXCIgiPGUYrvC2Fq5rWRzPJOMgcyTijaaJpOx0arS24fHJrL13L+uVVltVq7dRw7Z9Yj/ANZlH+0VScex56JM3HdWM2TaZM0/MkdExfIoQ0CcJVIbJUgH0pLgHiQO2neqqm2TZdsuMa4wH1x5cV1LzDqDhSFpIKVDxBAqwLd+2w2jaXp9pmQ+xF1LHbxNhZwV4/lWwetB68Dmk8j2EnJH0IPwWXfA2dS9KbRZOpYsY+4l9eL6HE8w3IIy6hXcSrKx3gnHUag+rTNS2Gz6lsz9mv1uYuECQMOMvJyD3EHrBHYRgjspZddboqXJS5GitSoZaUciLc0E8HodQMkelOfE1sZrTMlD8FNoqdVbq21ESA0FWJSD/KiarhH7GforoLNuhardkIF51VZYjH4aoiHX1D0BSUD6afJC4sWqtvon4Z2P1jH+sTWVtFt2n7Rq+dadMz5Fxt8NfQCY9wjyhaeS1pCeQRnIHM5AznnWLon4Z2P1jH+sTWmelo9JVv3fG7avULP2iRTq0lW/d8btq9Qs/aJFR49lZaPXZpvNQdDaGtWloOz9TzcFnhW8buEl5wkqWvHQnGVEnGTjOMnFem0Peplan0TdtPQdHm1PXGOY/lfun0vRoVyX5vRJzlPEOsYznspbaKrgieTCiiimFCiiigArtdi20GXs010xqWNEM5sMuMSInTdEH21Dq4sHGFBKuo/e1xVFY1YLobD7sZP83R/XX+RUS7wO1uFtXdtUpOlPcabAS42X/Lun6VtWCEkdGnGCCRz/AAjUU0ViikM5Nnd7Jtq+rtmb8k6ceiKjS1oXJjSWAtDpTkDJGFDrPUoVP+nN7+2qjtp1Fo+W08OTjkCQlaVeISvhI9HEfTSi0UOKYKTQ8I3sdmZa4zA1KFfIMRrP1uPprjNbb3fHHej6N0uttxXJuXc3B5o7+iR2/n48DSo0VmCDNm31fqa+6tvr971Fcnp854+c44eSR2JSBySkdgAArUUUUwpPuz/el1tYI8eBfLfb79CZSltJ4fJ3wkDAAUkcPV3oz41K1q3udDvJxctPagiL/wCElp5PzlaT9FJZRSuCYymx2rnva7PWI6zBs+opb4HmJUw02gnxV0hI+Y1C21neU1jrKG/abOwjTdqeTwOJYdK5DqT1hTuBgHuSByJBJFQdRQoJA5thRRRTikx7G94PV2z6G1Z5DTd9sjZAbiyFlLjCe5tzngeBCgOzFTtat7XZ+/HSbjZtQQn/AMJKGmnUD0K4wT8wpJqKRwTGUmhwdfb2dgNglRtGWm6m6utlDMma02hplR5ceApRURzIBAGcZpZNA6wlaY2i27Wb7blykxZZkvJW8UqfKs8WVkHBPEeeDXM0VqikDk2Nh92Mn+bo/rr/ACKW/aPqNrV2ubvqZq3+56blIL5jdL0vRkgZ87Cc88nqHXXP0UKKWjHJsKyLZPm2u4MXC2y34cyOsLZfYcKFtqHUQocwax6KYwYXQO9ZrKyx24mprbE1G0jkHuPyeRjxUkFKv0cntNSlbd7fQDzCDPseo4rx+/Shll1A9CukBP6IpKKKRwTGU2PDI3stmjYPBbtSvH+hEaH97oqOdpe9Y9e9N3GyaY02/bVzGlMie/LBcbSrkopQlPJWMgHi5ZzSyUUKCDNhWZZJvubeoNx6LpfJZDb/AAcXDxcKgrGezOKw6KcUbD7sZP8AN0f11/kVCm3jacNqOr4t/Fk9yfJ4CIfQ+VdPxcLji+Li4E4/jMYx2dfOo6opVFLQzk2f/9k=">
+    </div>
   </header>
 
   <div id="main">
     <!-- left rail: filters + display -->
     <aside id="left">
+      <div id="left-scroll">
       <div class="sec">
         <div class="sec-head">
           <span class="sec-title">Levels</span>
@@ -518,30 +809,97 @@
             <span class="track"><span class="thumb"></span></span>
           </span>
         </label>
-        <div class="lblsel-head">Label shows</div>
+        <div class="lblsel-head">Identity Data</div>
         <div class="lblist" id="lbl-list"></div>
+      </div>
+      </div><!-- /left-scroll -->
+
+      <div id="left-foot">
+        <button id="cog-btn" type="button" title="Display settings" aria-label="Display settings">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.2"/>
+            <path d="M8 1.3v2M8 12.7v2M1.3 8h2M12.7 8h2M3.3 3.3l1.4 1.4M11.3 11.3l1.4 1.4M12.7 3.3l-1.4 1.4M4.7 11.3l-1.4 1.4"/>
+          </svg>
+          <span>Display settings</span>
+        </button>
+      </div>
+      <div id="cog-pop" role="dialog" aria-label="Display settings">
+        <label class="switch">
+          <span class="slabel">Level planes</span>
+          <span class="toggle">
+            <input type="checkbox" id="levels-toggle" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
+        <div class="ctrl-row" title="Opacity of the level reference planes">
+          <span class="slabel">Plane opacity</span>
+          <input type="range" id="lvlop-slider" min="0.02" max="0.30" step="0.01" value="0.07">
+          <span class="val" id="lvlop-val">0.07</span>
+        </div>
 
         <div class="display-sub">Selection</div>
-        <div class="ctrl-row">
-          <span class="slabel">Fade unselected</span>
+        <div class="ctrl-row" title="Opacity of unselected spaces when something is selected">
+          <span class="slabel">Fade</span>
           <input type="range" id="fade-slider" min="0.05" max="0.5" step="0.01" value="0.22">
           <span class="val" id="fade-val">0.22</span>
         </div>
-        <div class="ctrl-row">
-          <span class="slabel">Highlight glow</span>
+        <div class="ctrl-row" title="Glow intensity on selected spaces">
+          <span class="slabel">Glow</span>
           <input type="range" id="glow-slider" min="0" max="1" step="0.05" value="0.55">
           <span class="val" id="glow-val">0.55</span>
         </div>
-        <div class="ctrl-row">
-          <span class="slabel">Highlight colour</span>
+        <div class="ctrl-row" title="Highlight colour for selected spaces">
+          <span class="slabel">Colour</span>
           <input type="color" id="hl-color" value="#2f88e6">
         </div>
+
+        <div class="display-sub">Units</div>
+        <label class="switch" title="Show area in square feet alongside square metres">
+          <span class="slabel">Also show ft&sup2;</span>
+          <span class="toggle">
+            <input type="checkbox" id="units-toggle" />
+            <span class="track"><span class="thumb"></span></span>
+          </span>
+        </label>
       </div>
     </aside>
 
     <!-- centre column: viewport + table panel -->
     <div id="centre">
     <section id="viewport">
+      <div id="dashboard" aria-hidden="true">
+        <div class="dash-header">
+          <div class="dash-title">Dashboard <span class="dash-alpha">Alpha</span></div>
+          <button class="dash-close" type="button" aria-label="Close dashboard">&times;</button>
+        </div>
+        <div class="dash-grid">
+          <div class="dash-card">
+            <div class="dash-card-head">Headlines</div>
+            <div class="dash-headline">
+              <div class="dash-num"><span class="dash-num-v" id="dash-total">0</span><span class="dash-num-l">Total area</span></div>
+              <div class="dash-num"><span class="dash-num-v" id="dash-count">0</span><span class="dash-num-l">Spaces</span></div>
+              <div class="dash-num"><span class="dash-num-v" id="dash-avg">0</span><span class="dash-num-l">Avg area</span></div>
+            </div>
+          </div>
+          <div class="dash-card">
+            <div class="dash-card-head">By scheme <span class="dash-card-hint">click to filter</span></div>
+            <div class="dash-card-body" id="dash-schemes-body"></div>
+          </div>
+          <div class="dash-card">
+            <div class="dash-card-head">By level <span class="dash-card-hint">click to filter</span></div>
+            <div class="dash-card-body" id="dash-levels-body"></div>
+          </div>
+          <div class="dash-card">
+            <div class="dash-card-head" id="dash-label-title">By label</div>
+            <div class="dash-card-body" id="dash-label-body"></div>
+          </div>
+        </div>
+        <div class="dash-tab" id="dash-tab" role="button" tabindex="0">
+          <span>Dashboard</span>
+          <span class="dash-alpha">Alpha</span>
+          <span class="dash-chevron">&#9660;</span>
+        </div>
+      </div>
       <div id="canvas-wrap">
         <canvas id="c"></canvas>
         <div id="labels"></div>
@@ -970,10 +1328,20 @@ function hover(e){
   if(id !== hoveredId){ hoveredId = id; updateHighlight(); }
   if(id){ showTooltip(e, records[id].space); } else { hideTooltip(); }
 }
-// user-tunable selection appearance (driven by Display sliders)
+// user-tunable selection appearance (driven by Display settings sliders)
 let fadeOpacity   = 0.22;
 let selectGlow    = 0.55;
 let selectColorHex = 0x2f88e6;
+
+// area unit display (cog > Units): m2 by default, m2 + ft2 when enabled
+let showImperial = false;
+const M2_TO_FT2 = 10.7639;
+function fmtArea(a){
+  if(showImperial){
+    return a.toFixed(1) + ' m\u00B2 \u00B7 ' + (a * M2_TO_FT2).toFixed(0) + ' ft\u00B2';
+  }
+  return a.toFixed(1) + ' m\u00B2';
+}
 
 function updateHighlight(){
   const anySel = selectedIds.size > 0;
@@ -1008,6 +1376,25 @@ document.querySelectorAll('.sec-collapse').forEach(function(btn){
   });
   document.addEventListener('click', function(e){
     if(pop.classList.contains('open') && !pop.contains(e.target) && e.target !== btn){
+      pop.classList.remove('open');
+    }
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') pop.classList.remove('open');
+  });
+})();
+
+// Display settings (cog) popover toggle
+(function(){
+  const btn = document.getElementById('cog-btn');
+  const pop = document.getElementById('cog-pop');
+  if(!btn || !pop) return;
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    pop.classList.toggle('open');
+  });
+  document.addEventListener('click', function(e){
+    if(pop.classList.contains('open') && !pop.contains(e.target) && !btn.contains(e.target)){
       pop.classList.remove('open');
     }
   });
@@ -1059,6 +1446,22 @@ document.querySelectorAll('.bd-mode-btn').forEach(function(b){
   if(hc){ hc.addEventListener('input', function(){
     selectColorHex = parseInt(hc.value.slice(1), 16);
     updateHighlight();
+  });}
+
+  const lo = document.getElementById('lvlop-slider');
+  const lov = document.getElementById('lvlop-val');
+  if(lo){ lo.addEventListener('input', function(){
+    levelPlaneOpacity = parseFloat(lo.value);
+    lov.textContent = levelPlaneOpacity.toFixed(2);
+    levelPlaneRecords.forEach(function(r){ r.mesh.material.opacity = levelPlaneOpacity; });
+  });}
+
+  const ut = document.getElementById('units-toggle');
+  if(ut){ ut.addEventListener('change', function(){
+    showImperial = ut.checked;
+    updateSummary();
+    updateSelectionCard();
+    if(window.updateDashboard) window.updateDashboard();
   });}
 })();
 
@@ -1112,7 +1515,7 @@ const tip = document.getElementById('tooltip');
 function showTooltip(e, s){
   const r = wrap.getBoundingClientRect();
   tip.innerHTML = '<div class="tt-name">'+s.name+'</div>'+
-                  '<div class="tt-meta">'+s.levelName+' &middot; '+s.dept+' &middot; '+s.area.toFixed(1)+' m&sup2;</div>';
+                  '<div class="tt-meta">'+s.levelName+' &middot; '+s.dept+' &middot; '+fmtArea(s.area)+'</div>';
   tip.style.display='block';
   let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
   if(x + tip.offsetWidth > r.width)  x = e.clientX - r.left - tip.offsetWidth - 14;
@@ -1187,28 +1590,74 @@ function relabel(){
   for(const id in labelEls){ labelEls[id].textContent = labelText(records[id].space); }
 }
 
-// Build the Label shows checklist
+// Build the Label shows checklist. Rows are draggable to set the order their
+// values appear in the on-canvas tag. selectedLabels is kept in sync with the
+// DOM order of the ticked rows, so both ticking and dragging update it.
+function syncSelectedFromDom(){
+  const order = [];
+  document.querySelectorAll('#lbl-list .lbl-row input[data-lbl]').forEach(function(inp){
+    if(inp.checked){ order.push(inp.getAttribute('data-lbl')); }
+  });
+  selectedLabels.length = 0;
+  Array.prototype.push.apply(selectedLabels, order);
+}
 (function(){
   const box = document.getElementById('lbl-list');
   if(!box){ return; }
   ALL_LABEL_FIELDS.forEach(function(o){
-    const row = document.createElement('label'); row.className='crow';
-    const empty = EMPTY_FIELDS.has(o);
-    if(empty) row.classList.add('crow-empty');
-    const checked  = (selectedLabels.indexOf(o) >= 0) ? ' checked' : '';
-    const disabled = empty ? ' disabled' : '';
-    const titleAttr = empty ? ' title="No data for this parameter"' : '';
-    row.innerHTML = '<input type="checkbox" data-lbl="'+escapeHtml(o)+'"'+checked+disabled+'>'+
-                    '<span class="cname"'+titleAttr+'>'+escapeHtml(o)+'</span>';
-    row.querySelector('input').addEventListener('change', function(ev){
-      const v = ev.target.getAttribute('data-lbl');
-      const i = selectedLabels.indexOf(v);
-      if(ev.target.checked){ if(i < 0) selectedLabels.push(v); }
-      else                 { if(i >= 0) selectedLabels.splice(i, 1); }
+    const row = document.createElement('div');
+    row.className = 'crow lbl-row';
+    row.setAttribute('draggable', 'true');
+    const checked = (selectedLabels.indexOf(o) >= 0) ? ' checked' : '';
+    row.innerHTML =
+      '<span class="lbl-grip" aria-hidden="true">\u283F</span>'+
+      '<label class="lbl-main">'+
+        '<input type="checkbox" data-lbl="'+escapeHtml(o)+'"'+checked+'>'+
+        '<span class="cname">'+escapeHtml(o)+'</span>'+
+      '</label>';
+    row.querySelector('input').addEventListener('change', function(){
+      syncSelectedFromDom();
       onLabelsChanged();
     });
     box.appendChild(row);
   });
+
+  // drag-to-reorder: the dragged row follows the cursor between its siblings
+  let dragEl = null;
+  box.addEventListener('dragstart', function(e){
+    const row = e.target.closest('.lbl-row');
+    if(!row){ return; }
+    dragEl = row; row.classList.add('dragging');
+    try{ e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); }catch(_){}
+  });
+  box.addEventListener('dragend', function(){
+    if(dragEl){ dragEl.classList.remove('dragging'); }
+    dragEl = null;
+  });
+  box.addEventListener('dragover', function(e){
+    if(!dragEl){ return; }
+    e.preventDefault();
+    const after = rowAfter(box, e.clientY);
+    if(after == null){ box.appendChild(dragEl); }
+    else if(after !== dragEl){ box.insertBefore(dragEl, after); }
+  });
+  box.addEventListener('drop', function(e){
+    if(!dragEl){ return; }
+    e.preventDefault();
+    syncSelectedFromDom();
+    onLabelsChanged();
+  });
+  function rowAfter(container, y){
+    const rows = Array.prototype.slice.call(
+      container.querySelectorAll('.lbl-row:not(.dragging)'));
+    let closest = null, closestOffset = -Infinity;
+    rows.forEach(function(r){
+      const b = r.getBoundingClientRect();
+      const offset = y - b.top - b.height / 2;
+      if(offset < 0 && offset > closestOffset){ closestOffset = offset; closest = r; }
+    });
+    return closest;
+  }
 })();
 
 // ---- group colours (stable per current label combination) ----
@@ -1281,6 +1730,53 @@ function updateLabels(){
 }
 function clearLabels(){ for(const id in labelEls) labelEls[id].style.display='none'; }
 
+/* ---- level reference planes (cog > Level planes) ---- */
+let levelPlaneOpacity = 0.07;
+const levelPlaneGroup = new THREE.Group(); scene.add(levelPlaneGroup);
+const levelPlaneRecords = [];
+(function buildLevelPlanes(){
+  const half = Math.max(SPAN * 0.72, 6);
+  const COL = 0x2f7fd1;
+  LEVELS.forEach(function(l){
+    const geo = new THREE.PlaneGeometry(half*2, half*2);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color:COL, transparent:true, opacity:levelPlaneOpacity, side:THREE.DoubleSide, depthWrite:false
+    }));
+    mesh.rotation.x = -Math.PI/2; mesh.position.y = l.z;
+    mesh.renderOrder = -1; mesh.visible = false;
+    levelPlaneGroup.add(mesh);
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({color:COL, transparent:true, opacity:0.35}));
+    edge.rotation.x = -Math.PI/2; edge.position.y = l.z; edge.visible = false;
+    levelPlaneGroup.add(edge);
+    const tag = document.createElement('div');
+    tag.className = 'lvl-tag'; tag.textContent = l.name; tag.style.display = 'none';
+    labelLayer.appendChild(tag);
+    levelPlaneRecords.push({ level:l, mesh:mesh, edge:edge, tag:tag,
+                             ax:-half*0.98, az:half*0.98 });
+  });
+})();
+
+let showLevelPlanes = false;
+// Per frame: planes obey the master toggle AND the Levels filter, and render
+// in 3D only (in plan they sit flat under the plates and add nothing).
+function updateLevelLayer(){
+  const enable = showLevelPlanes && (mode === '3D');
+  for(let i=0;i<levelPlaneRecords.length;i++){
+    const r = levelPlaneRecords[i];
+    const on = enable && activeLevels.has(r.level.id);
+    r.mesh.visible = on; r.edge.visible = on;
+    if(!on){ r.tag.style.display = 'none'; continue; }
+    _v.set(r.ax, r.level.z, r.az);
+    _v.project(active);
+    if(_v.z > 1){ r.tag.style.display = 'none'; continue; }
+    r.tag.style.display = 'block';
+    r.tag.style.left = ((_v.x*0.5+0.5)*vpW)+'px';
+    r.tag.style.top  = ((-_v.y*0.5+0.5)*vpH)+'px';
+  }
+}
+
 /* ============================================================
    FILTER STATE + UI
    ============================================================ */
@@ -1292,7 +1788,6 @@ const activeDepts  = new Set(
 );
 
 // counts
-const levelCounts = {}; LEVELS.forEach(function(l){ levelCounts[l.id]=SPACES.filter(function(s){return s.levelId===l.id;}).length; });
 const deptCounts  = {}; DEPT_ORDER.forEach(function(d){ deptCounts[d]=SPACES.filter(function(s){return s.dept===d;}).length; });
 
 // build level checkboxes
@@ -1300,26 +1795,45 @@ const levelList = document.getElementById('level-list');
 LEVELS.forEach(function(l){
   const row = document.createElement('label'); row.className='crow';
   row.innerHTML = '<input type="checkbox" checked data-level="'+l.id+'">'+
-                  '<span class="cname">'+l.name+'</span>'+
-                  '<span class="ccount">'+levelCounts[l.id]+'</span>';
+                  '<span class="cname">'+l.name+'</span>';
   row.querySelector('input').addEventListener('change', function(ev){
     if(ev.target.checked) activeLevels.add(l.id); else activeLevels.delete(l.id);
     applyFilters();
   });
   levelList.appendChild(row);
 });
-// build department checkboxes
+// normalise any CSS colour to #rrggbb for <input type="color">
+function toHexColor(c){
+  try{
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = '#888888'; ctx.fillStyle = c;
+    const v = ctx.fillStyle;
+    return /^#[0-9a-f]{6}$/i.test(v) ? v : '#888888';
+  }catch(e){ return '#888888'; }
+}
+// build department / scheme checkboxes, each with a colour picker (point 7).
+// Overrides last for the session only; Refresh or relaunch resets them.
 const deptList = document.getElementById('dept-list');
 DEPT_ORDER.forEach(function(d){
   const row = document.createElement('label'); row.className='crow';
   const ck = activeDepts.has(d) ? ' checked' : '';
   row.innerHTML = '<input type="checkbox"'+ck+' data-dept="'+d+'">'+
-                  '<span class="swatch" style="background:'+DEPARTMENTS[d].color+'"></span>'+
-                  '<span class="cname">'+d+'</span>'+
+                  '<input type="color" class="swatch dept-color" title="Change colour">'+
+                  '<span class="cname">'+escapeHtml(d)+'</span>'+
                   '<span class="ccount">'+deptCounts[d]+'</span>';
-  row.querySelector('input').addEventListener('change', function(ev){
+  const cp = row.querySelector('.dept-color');
+  cp.value = toHexColor(DEPARTMENTS[d].color);
+  row.querySelector('input[type=checkbox]').addEventListener('change', function(ev){
     if(ev.target.checked) activeDepts.add(d); else activeDepts.delete(d);
     applyFilters();
+  });
+  cp.addEventListener('change', function(ev){
+    const hex = ev.target.value;
+    DEPARTMENTS[d].color = hex;
+    SPACES.forEach(function(s){ if(s.dept === d){ s.color = hex; } });
+    applyMeshColours();
+    updateSelectionCard();
+    if(window.updateDashboard) window.updateDashboard();
   });
   deptList.appendChild(row);
 });
@@ -1344,6 +1858,12 @@ document.getElementById('lbl-toggle').addEventListener('change', function(e){
   if(!showLabels) clearLabels();
 });
 
+// level planes toggle
+const lvlToggle = document.getElementById('levels-toggle');
+if(lvlToggle){
+  lvlToggle.addEventListener('change', function(e){ showLevelPlanes = e.target.checked; });
+}
+
 // mode toggle
 const m3d = document.getElementById('m3d'), mplan = document.getElementById('mplan');
 const compass = document.getElementById('compass');
@@ -1361,12 +1881,7 @@ document.getElementById('reset').addEventListener('click', function(){
   target.set(0,STACK*0.5,0); sph.set(SPAN*1.45,1.02,0.85); orthoZoom=1.0; updateCamera();
 });
 document.getElementById('refresh').addEventListener('click', function(){
-  if(window.chrome && window.chrome.webview){
-    this.textContent = 'Refreshing\u2026'; this.disabled = true;
-    window.chrome.webview.postMessage('refresh');   // Revit re-reads, then reloads this page
-  } else {
-    location.reload();                               // browser fallback: re-read model-data.js
-  }
+  location.reload();   // re-reads model-data.js written by the last run
 });
 
 /* ---- apply filters + summary ---- */
@@ -1391,6 +1906,7 @@ function applyFilters(){
   recomputeColumns();
   recomputeLabelChecklist();
   updateTable();
+  if(window.updateDashboard) window.updateDashboard();
 }
 
 const elArea = document.getElementById('m-area');
@@ -1407,7 +1923,7 @@ function renderBars(groups, total){
     el.innerHTML =
       '<span class="bsw" style="background:'+g.color+'"></span>'+
       '<div class="bbody">'+
-        '<div class="bname"><span>'+escapeHtml(g.key)+'</span><span class="bval">'+g.area.toFixed(1)+' m&sup2; &middot; '+g.count+'</span></div>'+
+        '<div class="bname"><span>'+escapeHtml(g.key)+'</span><span class="bval">'+fmtArea(g.area)+' &middot; '+g.count+'</span></div>'+
         '<div class="btrack"><div class="bfill" style="width:'+pct.toFixed(1)+'%;background:'+g.color+'"></div></div>'+
       '</div>'+
       '<span class="bpct">'+pct.toFixed(0)+'%</span>';
@@ -1445,7 +1961,7 @@ function renderPie(groups, total){
     legend += '<div class="pie-row">'+
               '<span class="psw" style="background:'+g.color+'"></span>'+
               '<span class="pn" title="'+escapeHtml(g.key)+'">'+escapeHtml(g.key)+'</span>'+
-              '<span class="pv">'+g.area.toFixed(1)+' m&sup2; &middot; '+g.count+'</span>'+
+              '<span class="pv">'+fmtArea(g.area)+' &middot; '+g.count+'</span>'+
               '<span class="pp">'+pct+'%</span>'+
               '</div>';
   });
@@ -1456,7 +1972,9 @@ function renderPie(groups, total){
 function updateSummary(){
   const vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
   const total = vis.reduce(function(a,s){ return a+s.area; },0);
-  elArea.innerHTML = total.toFixed(1)+'<small>m&sup2;</small>';
+  elArea.innerHTML = showImperial
+    ? total.toFixed(1)+'<small>m&sup2;</small><div class="mv-sub">'+(total*M2_TO_FT2).toFixed(0)+' ft&sup2;</div>'
+    : total.toFixed(1)+'<small>m&sup2;</small>';
   elCount.textContent = vis.length;
 
   if(selectedLabels.length === 0){
@@ -1506,7 +2024,7 @@ function updateSelectionCard(){
     document.getElementById('sel-sw').style.background = 'transparent';
     document.getElementById('sel-deptname').textContent = '';
     document.getElementById('sel-level').textContent = '\u2014';   // em dash
-    document.getElementById('sel-area').textContent = total.toFixed(1)+' m\u00B2';
+    document.getElementById('sel-area').textContent = fmtArea(total);
     if(hRow) hRow.style.display = 'none';
     if(pbox) pbox.innerHTML = '';
     return;
@@ -1519,7 +2037,7 @@ function updateSelectionCard(){
   document.getElementById('sel-sw').style.background = s.color;
   document.getElementById('sel-deptname').textContent = s.dept;
   document.getElementById('sel-level').textContent = s.levelName;
-  document.getElementById('sel-area').textContent = s.area.toFixed(1)+' m\u00B2';
+  document.getElementById('sel-area').textContent = fmtArea(s.area);
   document.getElementById('sel-h').textContent = s.height.toFixed(1)+' m';
   if(hRow) hRow.style.display = (MODE === 'areas') ? 'none' : '';
   if(pbox){
@@ -1593,19 +2111,17 @@ function recomputeColumns(){
 // empty in the current view.
 function recomputeLabelChecklist(){
   const vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
-  document.querySelectorAll('#lbl-list .crow').forEach(function(row){
+  document.querySelectorAll('#lbl-list .lbl-row').forEach(function(row){
     const input = row.querySelector('input[data-lbl]');
     if(!input) return;
     const field = input.getAttribute('data-lbl');
     const empty = vis.length === 0 ||
                   vis.every(function(s){ return isEmptyVal(valueOf(s, field)); });
-    row.classList.toggle('crow-empty', empty);
-    input.disabled = empty && !input.checked;
-    const cname = row.querySelector('.cname');
-    if(cname){
-      if(empty) cname.setAttribute('title', 'No data for this parameter in the current view');
-      else      cname.removeAttribute('title');
-    }
+    // Point 6: drop params with no data in the current scheme selection
+    // entirely rather than greying them. The row stays in the DOM so its
+    // ticked state and drag position survive until its data comes back.
+    row.style.display = empty ? 'none' : '';
+    input.disabled = false;
   });
 }
 const colFilters = {};        // colName -> lower-case substring
@@ -1970,6 +2486,11 @@ tableCollapseBtn.addEventListener('click', function(){
   setTimeout(onResize, 0);
 });
 
+// Point 8: schedule starts collapsed; the user expands it when needed.
+tablePanel.classList.add('collapsed');
+splitterEl.classList.add('hidden');
+tableCollapseBtn.textContent = 'Expand';
+
 // ---- splitter drag (resize the table panel) ----
 (function(){
   const centre = document.getElementById('centre');
@@ -2017,6 +2538,7 @@ function loop(){
   requestAnimationFrame(loop);
   renderer.render(scene, active);
   updateLabels();
+  updateLevelLayer();
 }
 
 // init
@@ -2027,6 +2549,209 @@ updateTableHead();          // builds the schedule headers (sort + filter UI liv
 applyFilters();             // visibility + summary + table body
 updateSelectionCard();
 loop();
+
+
+// ============================================================ Dashboard
+// Slide-down overlay covering the 3D viewer. Self-contained module: it
+// reads the existing globals and writes back through the existing dept /
+// level checkbox change handlers.
+(function(){
+  const panel    = document.getElementById('dashboard');
+  const tab      = document.getElementById('dash-tab');
+  const closeBtn = panel && panel.querySelector('.dash-close');
+  if(!panel || !tab) return;
+
+  const chevron = tab.querySelector('.dash-chevron');
+  const mainEl  = document.getElementById('main');
+
+  function setOpen(open){
+    panel.classList.toggle('open', open);
+    chevron.innerHTML = open ? '&#9650;' : '&#9660;';
+    // Dashboard takes the full centre + right-rail width: collapse the right
+    // rail to a two-column grid while open, restore all three on close.
+    if(mainEl){ mainEl.classList.toggle('dash-wide', open); }
+    if(open) updateDashboard();
+    onResize();
+  }
+  tab.addEventListener('click', function(){ setOpen(!panel.classList.contains('open')); });
+  tab.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); setOpen(!panel.classList.contains('open')); }
+  });
+  if(closeBtn) closeBtn.addEventListener('click', function(){ setOpen(false); });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && panel.classList.contains('open')) setOpen(false);
+  });
+
+  // ---- helpers
+  function clickFilterCheckbox(selector){
+    const cb = document.querySelector(selector);
+    if(cb) cb.click();    // delegates to the existing applyFilters chain
+  }
+  // CSS.escape may not exist in very old engines; fall back to a regex.
+  const cssEsc = (window.CSS && CSS.escape) ? CSS.escape : function(s){
+    return String(s).replace(/[^a-zA-Z0-9_-]/g, function(c){
+      return '\\' + c.charCodeAt(0).toString(16) + ' ';
+    });
+  };
+
+  // ---- pie renderer
+  function renderPie(host, groups, onClick){
+    const total = groups.reduce(function(a,g){ return a+g.area; }, 0);
+    host.innerHTML = '';
+    if(total <= 0 || groups.length === 0){
+      host.innerHTML = '<div class="dash-empty">No data in the current view.</div>';
+      return;
+    }
+    const cx = 75, cy = 75, r = 64;
+    let acc = 0;
+    let svg = '<svg viewBox="0 0 150 150" class="dash-pie" xmlns="http://www.w3.org/2000/svg">';
+    if(groups.length === 1){
+      svg += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+groups[0].color+
+             '" stroke="#fff" stroke-width="1.5" class="dash-pie-slice'+
+             (onClick ? ' clickable' : '')+'" data-key="'+escapeHtml(groups[0].key)+'">'+
+             '<title>'+escapeHtml(groups[0].key)+': '+fmtArea(groups[0].area)+' (100%)</title>'+
+             '</circle>';
+    } else {
+      groups.forEach(function(g){
+        if(g.area <= 0) return;
+        const sA = (acc / total) * Math.PI * 2 - Math.PI/2;
+        acc += g.area;
+        const eA = (acc / total) * Math.PI * 2 - Math.PI/2;
+        const x1 = cx + r * Math.cos(sA);
+        const y1 = cy + r * Math.sin(sA);
+        const x2 = cx + r * Math.cos(eA);
+        const y2 = cy + r * Math.sin(eA);
+        const large = (eA - sA) > Math.PI ? 1 : 0;
+        svg += '<path d="M '+cx+' '+cy+' L '+x1.toFixed(2)+' '+y1.toFixed(2)+
+               ' A '+r+' '+r+' 0 '+large+' 1 '+x2.toFixed(2)+' '+y2.toFixed(2)+
+               ' Z" fill="'+g.color+'" stroke="#fff" stroke-width="1.5" class="dash-pie-slice'+
+               (onClick ? ' clickable' : '')+'" data-key="'+escapeHtml(g.key)+'">'+
+               '<title>'+escapeHtml(g.key)+': '+fmtArea(g.area)+' ('+
+               (g.area/total*100).toFixed(0)+'%)</title></path>';
+      });
+    }
+    svg += '</svg>';
+
+    let legend = '<div class="dash-legend">';
+    groups.forEach(function(g){
+      const pct = total > 0 ? (g.area / total * 100).toFixed(0) : 0;
+      legend += '<div class="dash-leg-row'+(onClick ? ' clickable' : '')+'" data-key="'+escapeHtml(g.key)+'">'+
+                '<span class="dash-leg-sw" style="background:'+g.color+'"></span>'+
+                '<span class="dash-leg-n" title="'+escapeHtml(g.key)+'">'+escapeHtml(g.key)+'</span>'+
+                '<span class="dash-leg-v">'+fmtArea(g.area)+'</span>'+
+                '<span class="dash-leg-p">'+pct+'%</span></div>';
+    });
+    legend += '</div>';
+    host.innerHTML = svg + legend;
+
+    if(onClick){
+      host.querySelectorAll('.dash-pie-slice, .dash-leg-row').forEach(function(el){
+        el.addEventListener('click', function(){
+          const k = el.getAttribute('data-key');
+          if(k) onClick(k);
+        });
+      });
+    }
+  }
+
+  // ---- bar renderer
+  function renderBars(host, bars, total, onClick){
+    host.innerHTML = '';
+    if(bars.length === 0){
+      host.innerHTML = '<div class="dash-empty">No data in the current view.</div>';
+      return;
+    }
+    const maxA = Math.max.apply(null, bars.map(function(b){ return b.area; }));
+    bars.forEach(function(b){
+      const pct  = maxA  > 0 ? (b.area / maxA  * 100) : 0;
+      const tpct = total > 0 ? (b.area / total * 100) : 0;
+      const row = document.createElement('div');
+      row.className = 'dash-bar' + (onClick ? ' clickable' : '');
+      row.setAttribute('data-key', b.key);
+      row.innerHTML =
+        '<span class="dash-bar-l">'+escapeHtml(b.label || b.key)+'</span>'+
+        '<div class="dash-bar-track"><div class="dash-bar-fill" style="width:'+pct.toFixed(1)+'%;background:'+b.color+'"></div></div>'+
+        '<span class="dash-bar-v">'+fmtArea(b.area)+'</span>'+
+        '<span class="dash-bar-p">'+tpct.toFixed(0)+'%</span>';
+      if(onClick) row.addEventListener('click', function(){ onClick(b.key); });
+      host.appendChild(row);
+    });
+  }
+
+  // ---- main update -- runs on every filter change via applyFilters
+  function updateDashboard(){
+    const vis = SPACES.filter(function(s){ return records[s.id].mesh.visible !== false; });
+    const total = vis.reduce(function(a,s){ return a + s.area; }, 0);
+
+    // Headlines
+    document.getElementById('dash-total').textContent = fmtArea(total);
+    document.getElementById('dash-count').textContent = vis.length;
+    document.getElementById('dash-avg').textContent =
+      vis.length > 0 ? fmtArea(total / vis.length) : '\u2014';
+
+    // By scheme
+    const bySchemeMap = {};
+    vis.forEach(function(s){
+      const k = s.dept || '(none)';
+      if(!bySchemeMap[k]){
+        bySchemeMap[k] = {key:k, area:0, count:0,
+          color:(DEPARTMENTS[k] && DEPARTMENTS[k].color) || '#8a8f98'};
+      }
+      bySchemeMap[k].area  += s.area;
+      bySchemeMap[k].count += 1;
+    });
+    const schemes = Object.keys(bySchemeMap).map(function(k){ return bySchemeMap[k]; })
+      .sort(function(a,b){ return b.area - a.area; });
+    renderPie(
+      document.getElementById('dash-schemes-body'), schemes,
+      function(key){ clickFilterCheckbox('#dept-list input[data-dept="'+cssEsc(key)+'"]'); }
+    );
+
+    // By level -- sort top-floor first using LEVELS' own order
+    const byLevelMap = {};
+    vis.forEach(function(s){
+      const k = s.levelId;
+      if(!byLevelMap[k]){
+        byLevelMap[k] = {key:k, label:s.levelName || k, area:0, count:0, color:'#5b6bb1'};
+      }
+      byLevelMap[k].area  += s.area;
+      byLevelMap[k].count += 1;
+    });
+    const levelOrder = {};
+    LEVELS.forEach(function(l, i){ levelOrder[l.id] = i; });
+    const levels = Object.keys(byLevelMap).map(function(k){ return byLevelMap[k]; })
+      .sort(function(a,b){ return (levelOrder[b.key] || 0) - (levelOrder[a.key] || 0); });
+    renderBars(
+      document.getElementById('dash-levels-body'), levels, total,
+      function(key){ clickFilterCheckbox('#level-list input[data-level="'+cssEsc(key)+'"]'); }
+    );
+
+    // By label -- groups by labelText (same as the right-rail Breakdown)
+    const labelHost  = document.getElementById('dash-label-body');
+    const labelTitle = document.getElementById('dash-label-title');
+    if(selectedLabels.length === 0){
+      labelTitle.textContent = 'By label';
+      labelHost.innerHTML = '<div class="dash-empty">Pick a label in the Display panel to see a breakdown.</div>';
+    } else {
+      labelTitle.textContent = 'By ' + selectedLabels.join(' \u00B7 ');
+      const byLblMap = {};
+      vis.forEach(function(s){
+        const k = labelText(s) || '(blank)';
+        if(!byLblMap[k]){
+          byLblMap[k] = {key:k, area:0, count:0, color:(groupColours[k] || '#8a8f98')};
+        }
+        byLblMap[k].area  += s.area;
+        byLblMap[k].count += 1;
+      });
+      const lbls = Object.keys(byLblMap).map(function(k){ return byLblMap[k]; })
+        .sort(function(a,b){ return b.area - a.area; });
+      renderPie(labelHost, lbls, null);   // label breakdown is read-only
+    }
+  }
+
+  window.updateDashboard = updateDashboard;
+  updateDashboard();   // initial render so the panel is ready when first opened
+})();
 </script>
 </body>
 </html>
